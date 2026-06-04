@@ -1,0 +1,41 @@
+# Dependencias
+node_modules/
+package-lock.json
+
+# Variables de entorno
+.env
+.env.local
+.env.production
+
+# Base de datos local
+*.db
+*.sqlite
+*.sql
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Archivos de Firebase
+service-account-key.json
+*.pem
+*.key
+
+# Build
+dist/
+build/
+
+# Archivos de backup
+*.bak
+*.backup
