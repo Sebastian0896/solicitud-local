@@ -1,21 +1,37 @@
 const admin = require('firebase-admin');
 
-// Inicializar Firebase con el archivo JSON
 let initialized = false;
 
 function initializeFirebase() {
   if (initialized) return;
   
   try {
-    // En Render, el archivo está en la raíz
-    const serviceAccount = require('../service-account-key.json');
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-    });
+    let serviceAccount;
+    
+    // En Render, usar variable de entorno
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+      });
+      console.log('✅ Firebase initialized from environment variable');
+    }
+    // En local, usar archivo
+    else {
+      try {
+        serviceAccount = require('../service-account-key.json');
+        admin.initializeApp({
+          credential: admin.credential.cert(serviceAccount),
+        });
+        console.log('✅ Firebase initialized from local file');
+      } catch (e) {
+        throw new Error('No se encontró archivo local');
+      }
+    }
+    
     initialized = true;
-    console.log('✅ Firebase Admin SDK initialized successfully');
   } catch (error) {
-    console.error('❌ Error initializing Firebase:', error.message);
+    console.warn('⚠️ Firebase not configured:', error.message);
   }
 }
 
@@ -27,8 +43,6 @@ class FirebaseService {
     
     if (!initialized) {
       console.log(`⚠️ [MOCK] Notificación no enviada - Firebase no inicializado`);
-      console.log(`   To: ${fcmToken.substring(0, 20)}...`);
-      console.log(`   Title: ${title}`);
       return null;
     }
     
@@ -53,10 +67,7 @@ class FirebaseService {
     
     initializeFirebase();
     
-    if (!initialized) {
-      console.log(`⚠️ [MOCK] Multicast not sent - Firebase not initialized`);
-      return null;
-    }
+    if (!initialized) return null;
     
     const validTokens = tokens.filter(t => t);
     if (validTokens.length === 0) return null;
@@ -72,7 +83,7 @@ class FirebaseService {
       console.log(`✅ Notifications sent: ${response.successCount}/${response.successCount + response.failureCount}`);
       return response;
     } catch (error) {
-      console.error(`❌ Error sending multicast: ${error.message}`);
+      console.error(`❌ Error: ${error.message}`);
       return null;
     }
   }
