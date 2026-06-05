@@ -153,10 +153,32 @@ const getProfile = async (req, res) => {
   }
 };
 
+const saveFcmToken = async (req, res) => {
+  const userId = req.user.id;
+  const { fcmToken } = req.body;
+  
+  if (!fcmToken) {
+    return res.status(400).json({ error: 'FCM token is required' });
+  }
+  
+  try {
+    await db.query(
+      'UPDATE users SET fcm_token = $1 WHERE id = $2',
+      [fcmToken, userId]
+    );
+    
+    res.json({ success: true, message: 'FCM token saved' });
+  } catch (error) {
+    console.error('Error saving FCM token:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
 module.exports = {
   toggleAvailability,
   updateProfile,
   updateLocation,
   getProviderStats,
-  getProfile
+  getProfile,
+  saveFcmToken
 };

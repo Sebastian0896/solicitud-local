@@ -4,7 +4,8 @@ const {
   updateProfile, 
   updateLocation,
   getProviderStats,
-  getProfile
+  getProfile,
+  saveFcmToken
 } = require('../controllers/userController');
 const { authenticate } = require('../middleware/auth');
 
@@ -15,5 +16,6 @@ router.put('/profile', authenticate, updateProfile);
 router.put('/location', authenticate, updateLocation);
 router.get('/provider/stats', authenticate, getProviderStats);
 router.get('/profile', authenticate, getProfile);
+router.post('/fcm-token', authenticate, saveFcmToken);
 
 module.exports = router;
