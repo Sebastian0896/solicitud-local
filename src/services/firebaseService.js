@@ -8,7 +8,7 @@ function initializeFirebase() {
   
   try {
     // En Render, el archivo está en la raíz
-    const serviceAccount = require('./service-account-key.json');
+    const serviceAccount = require('../service-account-key.json');
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
     });
