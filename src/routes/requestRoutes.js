@@ -8,7 +8,7 @@ const {
   getProviderAssignedRequests,
   updateRequestStatus,
   cancelRequest
-} = require('../controllers/requestController');
+} = require('../controllers/requests');
 const { authenticate, requireCustomer, requireProvider } = require('../middleware/auth');
 
 const router = express.Router();
