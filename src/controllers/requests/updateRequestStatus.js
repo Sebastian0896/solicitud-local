@@ -1,5 +1,5 @@
 const db = require('../../config/database');
-
+const FirebaseService = require('../../services/firebaseService');
 // Provider actualiza estado del pedido
 const updateRequestStatus = async (req, res) => {
   const { requestId } = req.params;

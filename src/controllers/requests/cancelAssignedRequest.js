@@ -1,5 +1,5 @@
 const db = require('../../config/database');
-
+const FirebaseService = require('../../services/firebaseService');
 
 // Provider cancela un pedido asignado
 const cancelAssignedRequest = async (req, res) => {

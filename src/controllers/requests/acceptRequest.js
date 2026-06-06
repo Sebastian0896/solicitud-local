@@ -1,5 +1,5 @@
 const db = require('../../config/database');
-
+const FirebaseService = require('../../services/firebaseService');
 // Provider acepta un pedido
 const acceptRequest = async (req, res) => {
   const { requestId } = req.params;
