@@ -6,7 +6,7 @@ const getCustomerRequests = async (req, res) => {
   
   try {
     const result = await db.query(
-      `SELECT id, request_text, status, provider_name, created_at, assigned_at, completed_at
+      `SELECT id, request_text, status, provider_name, created_at, assigned_at, completed_at, total_price
        FROM requests 
        WHERE customer_id = $1 
        ORDER BY created_at DESC`,

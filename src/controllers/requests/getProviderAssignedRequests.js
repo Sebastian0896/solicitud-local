@@ -15,7 +15,7 @@ const getProviderAssignedRequests = async (req, res) => {
     const providerLng = providerResult.rows[0]?.lng;
     
     let query = `
-      SELECT id, request_text, customer_name, customer_phone, status, created_at, assigned_at
+      SELECT id, request_text, customer_name, customer_phone, status, created_at, assigned_at, total_price
     `;
     
     if (providerLat && providerLng) {
@@ -29,7 +29,7 @@ const getProviderAssignedRequests = async (req, res) => {
     
     query += ` FROM requests 
       WHERE provider_id = $${providerLat && providerLng ? '3' : '1'} 
-      AND status IN ('assigned', 'on_the_way')
+      AND status IN ('assigned', 'on_the_way', 'waiting_confirmation')
       ORDER BY assigned_at DESC
     `;
     

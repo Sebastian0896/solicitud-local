@@ -26,6 +26,7 @@ const getPendingRequests = async (req, res) => {
         r.customer_name,
         r.customer_phone,
         r.created_at,
+        r.total_price,
         c.name as category_name,
         c.icon as category_icon,
         ST_X(r.customer_location::geometry) as lng,
