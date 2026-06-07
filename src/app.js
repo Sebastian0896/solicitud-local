@@ -10,6 +10,7 @@ const notificationRoutes = require('./routes/notificationRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const locationRoutes = require('./routes/locationRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
+const eventRoutes = require('./routes/eventRoutes');
 
 const app = express();
 
@@ -46,6 +47,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/locations', locationRoutes);
 app.use('/api/categories', categoryRoutes);
+app.use('/api/events', eventRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {
