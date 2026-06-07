@@ -1,43 +1,47 @@
 const db = require('../../config/database');
 
-// Provider obtiene pedidos pendientes cercanos
+// Obtener pedidos pendientes (SOLO de las categorías del proveedor) - MODIFICADO
 const getPendingRequests = async (req, res) => {
-  const { lat, lng, radius = 10 } = req.query;
   const providerId = req.user.id;
   
-  if (!lat || !lng) {
-    return res.status(400).json({ error: 'lat and lng are required' });
-  }
-  
   try {
-    // Verificar suscripción activa del provider
-    const providerCheck = await db.query(
-      'SELECT subscription_active, available, fcm_token FROM users WHERE id = $1',
+    // Obtener categorías del proveedor
+    const catResult = await db.query(
+      `SELECT category_id FROM provider_categories WHERE provider_id = $1`,
       [providerId]
     );
     
-    if (!providerCheck.rows[0]?.subscription_active) {
-      return res.status(403).json({ error: 'Active subscription required' });
+    const providerCategoryIds = catResult.rows.map(r => r.category_id);
+    
+    if (providerCategoryIds.length === 0) {
+      return res.json([]); // Proveedor sin categorías no ve nada
     }
     
-    if (!providerCheck.rows[0]?.available) {
-      return res.status(403).json({ error: 'You must be marked as available to see requests' });
-    }
-    
-    // Buscar pedidos pendientes cerca de la ubicación del provider
+    // Obtener pedidos SOLO de sus categorías
     const result = await db.query(
-      `SELECT r.id, r.request_text, r.customer_name, r.created_at, r.customer_id,
-              ST_Distance(r.customer_location, ST_SetSRID(ST_MakePoint($1, $2), 4326)) as distance_meters
+      `SELECT 
+        r.id, 
+        r.request_text, 
+        r.status, 
+        r.customer_name,
+        r.customer_phone,
+        r.created_at,
+        c.name as category_name,
+        c.icon as category_icon,
+        ST_X(r.customer_location::geometry) as lng,
+        ST_Y(r.customer_location::geometry) as lat
        FROM requests r
+       JOIN categories c ON r.category_id = c.id
        WHERE r.status = 'pending'
-         AND ST_DWithin(r.customer_location, ST_SetSRID(ST_MakePoint($1, $2), 4326), $3 * 1000)
+         AND r.category_id = ANY($1)
        ORDER BY r.created_at DESC`,
-      [parseFloat(lng), parseFloat(lat), parseFloat(radius)]
+      [providerCategoryIds]
     );
     
     res.json(result.rows);
+    
   } catch (error) {
-    console.error('Get pending requests error:', error);
+    console.error('Error en getPendingRequests:', error);
     res.status(500).json({ error: error.message });
   }
 };
