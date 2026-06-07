@@ -70,7 +70,23 @@ const addRequestEvent = async (req, res) => {
       [id, event_type, event_data, userId]
     );
     
-    // Si es price_accepted, actualizar total_price en requests
+    // 👇 ACTUALIZAR requests según el tipo de evento
+    if (event_type === 'price_assigned') {
+      const amount = event_data.amount;
+      await db.query(
+        `UPDATE requests SET total_price = $1, status = 'waiting_confirmation' WHERE id = $2`,
+        [amount, id]
+      );
+    }
+    
+    if (event_type === 'price_updated') {
+      const newAmount = event_data.new_amount;
+      await db.query(
+        `UPDATE requests SET total_price = $1 WHERE id = $2`,
+        [newAmount, id]
+      );
+    }
+    
     if (event_type === 'price_accepted') {
       const amount = event_data.amount;
       await db.query(
@@ -79,18 +95,9 @@ const addRequestEvent = async (req, res) => {
       );
     }
     
-    // Si es price_rejected, actualizar status a pending (vuelve a estar disponible)
     if (event_type === 'price_rejected') {
       await db.query(
-        `UPDATE requests SET status = 'pending' WHERE id = $1`,
-        [id]
-      );
-    }
-    
-    // Si es price_assigned, actualizar status a waiting_confirmation
-    if (event_type === 'price_assigned') {
-      await db.query(
-        `UPDATE requests SET status = 'waiting_confirmation' WHERE id = $1`,
+        `UPDATE requests SET status = 'pending', total_price = NULL WHERE id = $1`,
         [id]
       );
     }
@@ -107,7 +114,6 @@ const addRequestEvent = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-
 // Obtener timeline de eventos de un pedido
 const getRequestTimeline = async (req, res) => {
   const { id } = req.params;
