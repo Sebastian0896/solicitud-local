@@ -1,10 +1,41 @@
 // src/controllers/authController.js
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const { v4: uuidv4 } = require('uuid');
 const db = require('../config/database');
+const logger = require('../utils/logger');
+
+// Generar access token (corto plazo)
+const generateAccessToken = (user) => {
+  return jwt.sign(
+    { 
+      userId: user.id, 
+      email: user.email, 
+      role: user.role 
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: '15m' } // 15 minutos
+  );
+};
+
+// Generar refresh token (largo plazo)
+const generateRefreshToken = async (userId, ip) => {
+  const token = uuidv4();
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 7); // 7 días
+  
+  await db.query(
+    `INSERT INTO refresh_tokens (user_id, token, expires_at, created_by_ip)
+     VALUES ($1, $2, $3, $4)`,
+    [userId, token, expiresAt, ip]
+  );
+  
+  return token;
+};
 
 const register = async (req, res) => {
   const { email, password, name, phone, role, businessName } = req.body;
+  const clientIp = req.ip || req.connection.remoteAddress;
   
   try {
     // Verificar si ya existe
@@ -26,15 +57,15 @@ const register = async (req, res) => {
     
     const user = result.rows[0];
     
-    // Generar token
-    const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
-    );
+    // Generar tokens
+    const accessToken = generateAccessToken(user);
+    const refreshToken = await generateRefreshToken(user.id, clientIp);
+    
+    logger.info('Usuario registrado', { userId: user.id, email, role, ip: clientIp });
     
     res.status(201).json({
-      token,
+      accessToken,
+      refreshToken,
       user: {
         id: user.id,
         email: user.email,
@@ -44,13 +75,14 @@ const register = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Register error:', error);
+    logger.error('Register error:', { email, error: error.message });
     res.status(500).json({ error: error.message });
   }
 };
 
 const login = async (req, res) => {
   const { email, password } = req.body;
+  const clientIp = req.ip || req.connection.remoteAddress;
   
   try {
     const result = await db.query(
@@ -60,6 +92,7 @@ const login = async (req, res) => {
     );
     
     if (result.rows.length === 0) {
+      logger.warn('Intento de login fallido', { email, ip: clientIp, reason: 'user_not_found' });
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     
@@ -67,17 +100,19 @@ const login = async (req, res) => {
     const validPassword = await bcrypt.compare(password, user.password_hash);
     
     if (!validPassword) {
+      logger.warn('Intento de login fallido', { email, ip: clientIp, reason: 'wrong_password' });
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     
-    const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
-    );
+    // Generar tokens
+    const accessToken = generateAccessToken(user);
+    const refreshToken = await generateRefreshToken(user.id, clientIp);
+    
+    logger.info('Usuario logueado', { userId: user.id, email, ip: clientIp });
     
     res.json({
-      token,
+      accessToken,
+      refreshToken,
       user: {
         id: user.id,
         email: user.email,
@@ -88,9 +123,125 @@ const login = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Login error:', error);
+    logger.error('Login error:', { email, error: error.message });
     res.status(500).json({ error: error.message });
   }
 };
 
-module.exports = { register, login }; // ✅ Exportación correcta
+// Nuevo: Refresh token endpoint
+const refreshToken = async (req, res) => {
+  const { refreshToken } = req.body;
+  const clientIp = req.ip || req.connection.remoteAddress;
+  
+  if (!refreshToken) {
+    return res.status(401).json({ error: 'Refresh token requerido' });
+  }
+  
+  try {
+    // Verificar token en BD
+    const result = await db.query(
+      `SELECT user_id, expires_at, revoked 
+       FROM refresh_tokens 
+       WHERE token = $1`,
+      [refreshToken]
+    );
+    
+    if (result.rows.length === 0) {
+      logger.warn('Refresh token inválido', { ip: clientIp });
+      return res.status(401).json({ error: 'Refresh token inválido' });
+    }
+    
+    const tokenData = result.rows[0];
+    
+    if (tokenData.revoked) {
+      logger.warn('Refresh token revocado', { userId: tokenData.user_id, ip: clientIp });
+      return res.status(401).json({ error: 'Refresh token revocado' });
+    }
+    
+    if (new Date() > tokenData.expires_at) {
+      logger.warn('Refresh token expirado', { userId: tokenData.user_id, ip: clientIp });
+      return res.status(401).json({ error: 'Refresh token expirado' });
+    }
+    
+    // Obtener usuario
+    const userResult = await db.query(
+      `SELECT id, email, name, role, business_name
+       FROM users WHERE id = $1 AND is_active = true`,
+      [tokenData.user_id]
+    );
+    
+    if (userResult.rows.length === 0) {
+      return res.status(401).json({ error: 'Usuario no encontrado' });
+    }
+    
+    const user = userResult.rows[0];
+    
+    // Generar nuevos tokens
+    const newAccessToken = generateAccessToken(user);
+    const newRefreshToken = await generateRefreshToken(user.id, clientIp);
+    
+    // Revocar token viejo
+    await db.query(
+      'UPDATE refresh_tokens SET revoked = true WHERE token = $1',
+      [refreshToken]
+    );
+    
+    logger.info('Token refrescado', { userId: user.id, ip: clientIp });
+    
+    res.json({
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
+    });
+    
+  } catch (error) {
+    logger.error('Error en refreshToken', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Nuevo: Logout (revocar refresh token)
+const logout = async (req, res) => {
+  const { refreshToken } = req.body;
+  const userId = req.user?.userId;
+  
+  try {
+    if (refreshToken) {
+      await db.query(
+        'UPDATE refresh_tokens SET revoked = true WHERE token = $1',
+        [refreshToken]
+      );
+    }
+    
+    logger.info('Usuario cerró sesión', { userId });
+    res.json({ success: true, message: 'Sesión cerrada' });
+  } catch (error) {
+    logger.error('Error en logout', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Nuevo: Revocar todos los refresh tokens de un usuario (para cambio de contraseña)
+const revokeAllUserTokens = async (req, res) => {
+  const userId = req.user.userId;
+  
+  try {
+    await db.query(
+      'UPDATE refresh_tokens SET revoked = true WHERE user_id = $1',
+      [userId]
+    );
+    
+    logger.info('Todos los tokens revocados', { userId });
+    res.json({ success: true, message: 'Todas las sesiones cerradas' });
+  } catch (error) {
+    logger.error('Error revocando tokens', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+};
+
+module.exports = { 
+  register, 
+  login, 
+  refreshToken, 
+  logout,
+  revokeAllUserTokens
+};

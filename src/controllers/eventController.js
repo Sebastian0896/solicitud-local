@@ -1,4 +1,5 @@
 const db = require('../config/database');
+const logger = require('../utils/logger')
 
 // Agregar evento a un pedido
 const addRequestEvent = async (req, res) => {
@@ -6,6 +7,12 @@ const addRequestEvent = async (req, res) => {
   const { event_type, event_data } = req.body;
   const userId = req.user.id;
   const userRole = req.user.role;
+
+  logger.info('Evento request recibido', { 
+    requestId: id, 
+    userId,
+    event_type: req.body.event_type 
+  });
   
   // Validar campos requeridos
   if (!event_type || !event_data) {

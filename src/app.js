@@ -12,6 +12,13 @@ const locationRoutes = require('./routes/locationRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
 const eventRoutes = require('./routes/eventRoutes');
 
+const { 
+  generalLimiter, 
+  authLimiter, 
+  requestLimiter, 
+  eventLimiter 
+} = require('./middleware/rateLimit');
+
 const app = express();
 
 app.use(cors());
@@ -38,16 +45,19 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Aplicar a todas las rutas
+app.use('/api', generalLimiter);
+
 // Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/requests', requestRoutes);
+app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/requests', requestLimiter, requestRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/locations', locationRoutes);
 app.use('/api/categories', categoryRoutes);
-app.use('/api/events', eventRoutes);
+app.use('/api/events', eventLimiter, eventRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {
