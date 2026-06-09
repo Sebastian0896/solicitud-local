@@ -31,8 +31,10 @@ const createRequest = async (req, res) => {
     
     const result = await db.query(
       `INSERT INTO requests 
-       (id, customer_id, request_text, status, customer_name, customer_phone, created_at, category_id, customer_location)
-       VALUES (gen_random_uuid(), $1, $2, 'pending', $3, $4, NOW(), $5, ST_SetSRID(ST_MakePoint($6, $7), 4326))
+       (id, customer_id, request_text, status, customer_name, customer_phone, 
+        created_at, original_created_at, category_id, customer_location, repeat_count)
+       VALUES (gen_random_uuid(), $1, $2, 'pending', $3, $4, NOW(), NOW(), $5, 
+               ST_SetSRID(ST_MakePoint($6, $7), 4326), 1)
        RETURNING id`,
       [customerId, request_text, customerName, customerPhone, category_id, lng, lat]
     );

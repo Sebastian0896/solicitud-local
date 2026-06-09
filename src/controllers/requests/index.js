@@ -6,6 +6,8 @@ const acceptRequest = require('./acceptRequest');
 const getProviderAssignedRequests = require('./getProviderAssignedRequests');
 const updateRequestStatus = require('./updateRequestStatus');
 const cancelAssignedRequest = require('./cancelAssignedRequest');
+const deleteRequest = require('./deleteRequest');
+const repeatRequest = require('./repeatRequest');
 
 module.exports = {
   createRequest,
@@ -15,5 +17,7 @@ module.exports = {
   acceptRequest,
   getProviderAssignedRequests,
   updateRequestStatus,
-  cancelAssignedRequest
+  cancelAssignedRequest,
+  deleteRequest,
+  repeatRequest
 };

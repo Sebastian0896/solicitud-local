@@ -6,10 +6,30 @@ const getCustomerRequests = async (req, res) => {
   
   try {
     const result = await db.query(
-      `SELECT id, request_text, status, provider_name, created_at, assigned_at, completed_at, total_price
+      `SELECT 
+        id, 
+        request_text, 
+        status, 
+        customer_name,
+        customer_phone,
+        provider_name, 
+        created_at, 
+        assigned_at, 
+        completed_at,
+        total_price,
+        repeat_count,
+        last_repeated_at,
+        original_created_at
        FROM requests 
        WHERE customer_id = $1 
-       ORDER BY created_at DESC`,
+         AND is_deleted = false
+       ORDER BY 
+         CASE 
+           WHEN status IN ('pending', 'waiting_confirmation', 'assigned') THEN 0
+           ELSE 1
+         END,
+         last_repeated_at DESC NULLS LAST,
+         created_at DESC`,
       [customerId]
     );
     

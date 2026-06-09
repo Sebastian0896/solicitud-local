@@ -7,7 +7,9 @@ const {
   getCustomerRequests,
   getProviderAssignedRequests,
   updateRequestStatus,
-  cancelRequest
+  cancelRequest,
+  deleteRequest,
+  repeatRequest
 } = require('../controllers/requests');
 const { authenticate, requireCustomer, requireProvider } = require('../middleware/auth');
 
@@ -23,5 +25,10 @@ router.get('/pending', authenticate, requireProvider, getPendingRequests);
 router.post('/:requestId/accept', authenticate, requireProvider, acceptRequest);
 router.get('/provider/assigned', authenticate, requireProvider, getProviderAssignedRequests);
 router.put('/:requestId/status', authenticate, requireProvider, updateRequestStatus);
+
+//Ruta delete request o repeat request
+// routes/requestRoutes.js
+router.delete('/:requestId/delete', authenticate, deleteRequest);
+router.post('/:requestId/repeat', authenticate, repeatRequest);
 
 module.exports = router;
