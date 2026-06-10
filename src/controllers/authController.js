@@ -18,15 +18,22 @@ const generateAccessToken = (user) => {
   );
 };
 
-// Generar refresh token (largo plazo)
+// Generar refresh token (UPSERT - solo un registro por usuario)
 const generateRefreshToken = async (userId, ip) => {
   const token = uuidv4();
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 7); // 7 días
   
+  // UPSERT: actualiza si existe, inserta si no
   await db.query(
     `INSERT INTO refresh_tokens (user_id, token, expires_at, created_by_ip)
-     VALUES ($1, $2, $3, $4)`,
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (user_id) DO UPDATE SET
+       token = EXCLUDED.token,
+       expires_at = EXCLUDED.expires_at,
+       revoked = false,
+       created_at = NOW(),
+       created_by_ip = EXCLUDED.created_by_ip`,
     [userId, token, expiresAt, ip]
   );
   
@@ -38,16 +45,13 @@ const register = async (req, res) => {
   const clientIp = req.ip || req.connection.remoteAddress;
   
   try {
-    // Verificar si ya existe
     const existingUser = await db.query('SELECT id FROM users WHERE email = $1', [email]);
     if (existingUser.rows.length > 0) {
       return res.status(400).json({ error: 'Email already registered' });
     }
     
-    // Hash password
     const passwordHash = await bcrypt.hash(password, 10);
     
-    // Insertar usuario
     const result = await db.query(
       `INSERT INTO users (email, password_hash, name, phone, role, business_name, is_active)
        VALUES ($1, $2, $3, $4, $5, $6, true)
@@ -57,7 +61,6 @@ const register = async (req, res) => {
     
     const user = result.rows[0];
     
-    // Generar tokens
     const accessToken = generateAccessToken(user);
     const refreshToken = await generateRefreshToken(user.id, clientIp);
     
@@ -104,7 +107,6 @@ const login = async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     
-    // Generar tokens
     const accessToken = generateAccessToken(user);
     const refreshToken = await generateRefreshToken(user.id, clientIp);
     
@@ -128,7 +130,6 @@ const login = async (req, res) => {
   }
 };
 
-// Nuevo: Refresh token endpoint
 const refreshToken = async (req, res) => {
   const { refreshToken } = req.body;
   const clientIp = req.ip || req.connection.remoteAddress;
@@ -138,7 +139,6 @@ const refreshToken = async (req, res) => {
   }
   
   try {
-    // Verificar token en BD
     const result = await db.query(
       `SELECT user_id, expires_at, revoked 
        FROM refresh_tokens 
@@ -163,7 +163,6 @@ const refreshToken = async (req, res) => {
       return res.status(401).json({ error: 'Refresh token expirado' });
     }
     
-    // Obtener usuario
     const userResult = await db.query(
       `SELECT id, email, name, role, business_name
        FROM users WHERE id = $1 AND is_active = true`,
@@ -176,7 +175,6 @@ const refreshToken = async (req, res) => {
     
     const user = userResult.rows[0];
     
-    // Generar nuevos tokens
     const newAccessToken = generateAccessToken(user);
     const newRefreshToken = await generateRefreshToken(user.id, clientIp);
     
@@ -199,7 +197,6 @@ const refreshToken = async (req, res) => {
   }
 };
 
-// Nuevo: Logout (revocar refresh token)
 const logout = async (req, res) => {
   const { refreshToken } = req.body;
   const userId = req.user?.userId;
@@ -220,7 +217,6 @@ const logout = async (req, res) => {
   }
 };
 
-// Nuevo: Revocar todos los refresh tokens de un usuario (para cambio de contraseña)
 const revokeAllUserTokens = async (req, res) => {
   const userId = req.user.userId;
   
