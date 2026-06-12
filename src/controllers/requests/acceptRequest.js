@@ -45,7 +45,7 @@ const acceptRequest = async (req, res) => {
     
     if (!provider.available) {
       await client.query('ROLLBACK');
-      return res.status(403).json({ error: 'You must be available to accept requests' });
+      return res.status(403).json({ error: 'Debes estar activo para aceptar pedidos.' });
     }
     
     if (provider.active_requests >= provider.max_requests) {
@@ -97,9 +97,9 @@ const acceptRequest = async (req, res) => {
     
     // Crear notificación en base de datos para el cliente
     await db.query(
-      `INSERT INTO notifications (user_id, title, body, type, created_at)
-       VALUES ($1, 'Pedido aceptado', $2, 'request_accepted', NOW())`,
-      [request.customer_id, `${providerName} ha aceptado tu pedido`]
+      `INSERT INTO notifications (user_id, title, body, type, request_id, created_at)
+       VALUES ($1, 'Pedido aceptado', $2, 'request_accepted', $3, NOW())`,
+      [request.customer_id, `${providerName} ha aceptado tu pedido`, requestId]
     );
     
     res.json({ 

@@ -88,23 +88,9 @@ const cancelRequest = async (req, res) => {
       }
 
       await db.query(
-        `INSERT INTO notifications
-         (
-           user_id,
-           title,
-           body,
-           type,
-           created_at
-         )
-         VALUES
-         (
-           $1,
-           'Pedido cancelado',
-           'El cliente canceló el pedido asignado',
-           'customer_cancelled',
-           NOW()
-         )`,
-        [request.provider_id]
+        `INSERT INTO notifications (user_id, title, body, type, request_id, created_at)
+         VALUES ($1, 'Pedido cancelado', 'El cliente canceló el pedido asignado', 'customer_cancelled', $2, NOW())`,
+        [request.provider_id, requestId]
       );
     }
 

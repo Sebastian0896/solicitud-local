@@ -88,9 +88,9 @@ const updateRequestStatus = async (req, res) => {
     
     // Crear notificación en base de datos
     await db.query(
-      `INSERT INTO notifications (user_id, title, body, type, created_at)
-       VALUES ($1, $2, $3, 'status_update', NOW())`,
-      [customerId, notificationTitle, `Tu pedido está ${statusMessage} con ${providerName}`]
+      `INSERT INTO notifications (user_id, title, body, type, request_id, created_at)
+       VALUES ($1, $2, $3, 'status_update', $4, NOW())`,
+      [customerId, notificationTitle, `Tu pedido está ${statusMessage} con ${providerName}`, requestId]
     );
     
     res.json({ success: true, status });
