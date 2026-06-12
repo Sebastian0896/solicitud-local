@@ -25,7 +25,7 @@ const getCustomerRequests = async (req, res) => {
         c.icon AS category_icon,
         ST_Y(r.customer_location::geometry) AS lat,
         ST_X(r.customer_location::geometry) AS lng,
-        r.rated_by_customer
+        EXISTS(SELECT 1 FROM ratings WHERE request_id = r.id) AS rated_by_customer
        FROM requests r
        LEFT JOIN categories c ON r.category_id = c.id
        WHERE r.customer_id = $1
