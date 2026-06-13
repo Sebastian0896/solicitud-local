@@ -37,17 +37,34 @@ const acceptRequest = async (req, res) => {
     );
     
     const provider = providerResult.rows[0];
-    
-    if (!provider.subscription_active) {
-      await client.query('ROLLBACK');
-      return res.status(403).json({ error: 'Active subscription required' });
-    }
-    
+    const FREE_DAILY_LIMIT = 20;
+
     if (!provider.available) {
       await client.query('ROLLBACK');
       return res.status(403).json({ error: 'Debes estar activo para aceptar pedidos.' });
     }
-    
+
+    // Tier gratuito: máximo FREE_DAILY_LIMIT pedidos por día
+    if (!provider.subscription_active) {
+      const dailyResult = await client.query(
+        `SELECT COUNT(*) FROM requests
+         WHERE provider_id = $1
+           AND assigned_at >= CURRENT_DATE
+           AND assigned_at < CURRENT_DATE + INTERVAL '1 day'`,
+        [providerId]
+      );
+      const dailyCount = parseInt(dailyResult.rows[0].count);
+      if (dailyCount >= FREE_DAILY_LIMIT) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({
+          error: 'free_limit_reached',
+          message: `Alcanzaste el límite de ${FREE_DAILY_LIMIT} pedidos diarios del plan gratuito.`,
+          dailyCount,
+          limit: FREE_DAILY_LIMIT,
+        });
+      }
+    }
+
     if (provider.active_requests >= provider.max_requests) {
       await client.query('ROLLBACK');
       return res.status(429).json({ error: `Max requests limit reached (${provider.max_requests})` });
