@@ -18,10 +18,11 @@ const submitRating = async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Verificar que el pedido pertenece al cliente y está entregado
     const reqResult = await client.query(
-      `SELECT id, provider_id, status, rated_by_customer
-       FROM requests WHERE id = $1 AND customer_id = $2`,
+      `SELECT r.id, r.provider_id, r.status,
+              (SELECT COUNT(*) FROM ratings WHERE request_id = r.id) > 0 AS already_rated
+       FROM requests r
+       WHERE r.id = $1 AND r.customer_id = $2`,
       [requestId, customerId]
     );
 
@@ -37,23 +38,15 @@ const submitRating = async (req, res) => {
       return res.status(400).json({ error: 'Solo puedes calificar pedidos entregados' });
     }
 
-    if (request.rated_by_customer) {
+    if (request.already_rated) {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'Ya calificaste este pedido' });
     }
 
-    // Insertar en tabla ratings
     await client.query(
       `INSERT INTO ratings (provider_id, customer_id, request_id, rating, comment, created_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())
-       ON CONFLICT (request_id) DO UPDATE SET rating = $4, comment = $5`,
+       VALUES ($1, $2, $3, $4, $5, NOW())`,
       [request.provider_id, customerId, requestId, ratingNum, comment || null]
-    );
-
-    // Marcar el pedido como calificado y actualizar rating promedio del proveedor
-    await client.query(
-      `UPDATE requests SET rated_by_customer = true WHERE id = $1`,
-      [requestId]
     );
 
     await client.query(
