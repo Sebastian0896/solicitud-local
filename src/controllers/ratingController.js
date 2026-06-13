@@ -1,6 +1,5 @@
 const db = require('../config/database');
 
-// POST /api/ratings  { requestId, rating, comment }
 const submitRating = async (req, res) => {
   const { requestId, rating, comment } = req.body;
   const customerId = req.user.id;
@@ -10,7 +9,7 @@ const submitRating = async (req, res) => {
   }
 
   const ratingNum = parseInt(rating, 10);
-  if (ratingNum < 1 || ratingNum > 5) {
+  if (isNaN(ratingNum) || ratingNum < 1 || ratingNum > 5) {
     return res.status(400).json({ error: 'El rating debe ser entre 1 y 5' });
   }
 
@@ -20,7 +19,7 @@ const submitRating = async (req, res) => {
 
     const reqResult = await client.query(
       `SELECT r.id, r.provider_id, r.status,
-              (SELECT COUNT(*) FROM ratings WHERE request_id = r.id) > 0 AS already_rated
+              EXISTS(SELECT 1 FROM ratings WHERE request_id = r.id) AS already_rated
        FROM requests r
        WHERE r.id = $1 AND r.customer_id = $2`,
       [requestId, customerId]
@@ -50,11 +49,9 @@ const submitRating = async (req, res) => {
     );
 
     await client.query(
-      `UPDATE users
-       SET rating = (
-         SELECT ROUND(AVG(rating)::numeric, 1)
-         FROM ratings WHERE provider_id = $1
-       )
+      `UPDATE users SET
+         rating = (SELECT ROUND(AVG(rating)::numeric, 1) FROM ratings WHERE provider_id = $1),
+         rating_count = (SELECT COUNT(*) FROM ratings WHERE provider_id = $1)
        WHERE id = $1`,
       [request.provider_id]
     );
@@ -63,7 +60,7 @@ const submitRating = async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('Rating error:', error);
+    console.error('Rating error:', error.message);
     res.status(500).json({ error: error.message });
   } finally {
     client.release();
