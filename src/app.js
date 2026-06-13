@@ -25,6 +25,9 @@ const {
 
 const app = express();
 
+// Render está detrás de un proxy — necesario para express-rate-limit
+app.set('trust proxy', 1);
+
 app.use(cors());
 
 // Para más seguridad, configurar específicamente
