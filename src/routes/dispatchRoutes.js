@@ -12,6 +12,7 @@ const {
   confirmDispatch,
   departDispatch,
   deliverRequest,
+  rejectDispatch,
   lookupDelivery,
   deleteDispatchCode,
   getAvailableRequests,
@@ -32,6 +33,7 @@ router.get('/:id/available-requests', authenticate, requireProvider, getAvailabl
 // ── Delivery ───────────────────────────────────────────────
 router.get('/my', authenticate, requireDelivery, getDeliveryDispatchCodes);
 router.post('/:id/confirm', authenticate, requireDelivery, confirmDispatch);
+router.post('/:id/reject', authenticate, requireDelivery, rejectDispatch);
 router.post('/:id/depart', authenticate, requireDelivery, departDispatch);
 router.post('/:id/deliver/:requestId', authenticate, requireDelivery, deliverRequest);
 

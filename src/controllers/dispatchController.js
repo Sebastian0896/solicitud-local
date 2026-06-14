@@ -610,6 +610,7 @@ const deleteDispatchCode = async (req, res) => {
       return res.status(400).json({ error: 'Solo puedes eliminar despachos que aún no han salido.' });
     }
 
+    await db.query('DELETE FROM dispatch_code_requests WHERE dispatch_code_id = $1', [id]);
     await db.query('DELETE FROM dispatch_codes WHERE id = $1', [id]);
     res.json({ success: true, message: 'Despacho eliminado.' });
   } catch (error) {
@@ -662,6 +663,54 @@ const getAvailableRequests = async (req, res) => {
   }
 };
 
+// ──────────────────────────────────────────────
+// DELIVERY: Rechazar un despacho asignado (solo si está pending)
+// POST /api/dispatch/:id/reject
+// ──────────────────────────────────────────────
+const rejectDispatch = async (req, res) => {
+  const { id } = req.params;
+  const deliveryId = req.user.id;
+  const deliveryName = req.user.name;
+
+  try {
+    const dispatch = await db.query(
+      `SELECT status, provider_id FROM dispatch_codes WHERE id = $1 AND delivery_id = $2`,
+      [id, deliveryId]
+    );
+    if (dispatch.rows.length === 0) {
+      return res.status(404).json({ error: 'Despacho no encontrado.' });
+    }
+    if (dispatch.rows[0].status !== 'pending') {
+      return res.status(400).json({ error: 'Solo puedes rechazar un despacho pendiente de confirmar.' });
+    }
+
+    await db.query(
+      `UPDATE dispatch_codes SET delivery_id = NULL, status = 'pending' WHERE id = $1`,
+      [id]
+    );
+
+    // Notificar al proveedor
+    const providerFcm = await db.query(
+      'SELECT fcm_token FROM users WHERE id = $1',
+      [dispatch.rows[0].provider_id]
+    );
+    if (providerFcm.rows[0]?.fcm_token) {
+      await FirebaseService.sendNotification(
+        providerFcm.rows[0].fcm_token,
+        '❌ Despacho rechazado',
+        `${deliveryName} rechazó el despacho. Asigna un nuevo delivery.`,
+        { type: 'dispatch_rejected', dispatchId: id }
+      ).catch(() => {});
+    }
+
+    logger.info('Despacho rechazado', { dispatchId: id, deliveryId });
+    res.json({ success: true, message: 'Despacho rechazado.' });
+  } catch (error) {
+    logger.error('rejectDispatch error', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+};
+
 module.exports = {
   createDispatchCode,
   getProviderDispatchCodes,
@@ -673,6 +722,7 @@ module.exports = {
   confirmDispatch,
   departDispatch,
   deliverRequest,
+  rejectDispatch,
   lookupDelivery,
   deleteDispatchCode,
   getAvailableRequests,
