@@ -679,8 +679,8 @@ const closeDispatch = async (req, res) => {
     if (dispatch.rows.length === 0) {
       return res.status(404).json({ error: 'Despacho no encontrado.' });
     }
-    if (dispatch.rows[0].status !== 'fulfilled') {
-      return res.status(400).json({ error: 'Solo puedes cerrar un despacho completamente entregado.' });
+    if (!['active', 'fulfilled'].includes(dispatch.rows[0].status)) {
+      return res.status(400).json({ error: 'No puedes cerrar un despacho que está en tránsito o ya está cerrado.' });
     }
 
     await db.query(`UPDATE dispatch_codes SET status = 'completed' WHERE id = $1`, [id]);
