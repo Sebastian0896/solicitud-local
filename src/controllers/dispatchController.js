@@ -189,9 +189,9 @@ const addRequestToDispatch = async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Pedido no encontrado o no te pertenece.' });
     }
-    if (!['assigned', 'price_confirmed'].includes(request.rows[0].status)) {
+    if (request.rows[0].status !== 'price_confirmed') {
       await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Solo puedes despachar pedidos aceptados.' });
+      return res.status(400).json({ error: 'Solo puedes despachar pedidos confirmados por el cliente.' });
     }
 
     // Verificar que el pedido no esté en otro código activo
@@ -645,7 +645,7 @@ const getAvailableRequests = async (req, res) => {
               ST_X(r.customer_location::geometry) AS lng
        FROM requests r
        WHERE r.provider_id = $1
-         AND r.status IN ('assigned', 'waiting_confirmation', 'price_confirmed')
+         AND r.status = 'price_confirmed'
          AND r.id NOT IN (
            SELECT dcr.request_id
            FROM dispatch_code_requests dcr
