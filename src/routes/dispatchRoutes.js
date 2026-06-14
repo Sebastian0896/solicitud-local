@@ -13,6 +13,8 @@ const {
   departDispatch,
   deliverRequest,
   lookupDelivery,
+  deleteDispatchCode,
+  getAvailableRequests,
 } = require('../controllers/dispatchController');
 
 const router = express.Router();
@@ -24,6 +26,8 @@ router.get('/lookup-delivery', authenticate, requireProvider, lookupDelivery);
 router.post('/:id/requests', authenticate, requireProvider, addRequestToDispatch);
 router.delete('/:id/requests/:requestId', authenticate, requireProvider, removeRequestFromDispatch);
 router.post('/:id/assign', authenticate, requireProvider, assignDelivery);
+router.delete('/:id', authenticate, requireProvider, deleteDispatchCode);
+router.get('/:id/available-requests', authenticate, requireProvider, getAvailableRequests);
 
 // ── Delivery ───────────────────────────────────────────────
 router.get('/my', authenticate, requireDelivery, getDeliveryDispatchCodes);

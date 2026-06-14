@@ -590,6 +590,78 @@ const lookupDelivery = async (req, res) => {
   }
 };
 
+// ──────────────────────────────────────────────
+// PROVEEDOR: Eliminar un despacho (solo si está pendiente)
+// DELETE /api/dispatch/:id
+// ──────────────────────────────────────────────
+const deleteDispatchCode = async (req, res) => {
+  const { id } = req.params;
+  const providerId = req.user.id;
+
+  try {
+    const dispatch = await db.query(
+      `SELECT status FROM dispatch_codes WHERE id = $1 AND provider_id = $2`,
+      [id, providerId]
+    );
+    if (dispatch.rows.length === 0) {
+      return res.status(404).json({ error: 'Código de despacho no encontrado.' });
+    }
+    if (!['pending', 'active'].includes(dispatch.rows[0].status)) {
+      return res.status(400).json({ error: 'Solo puedes eliminar despachos que aún no han salido.' });
+    }
+
+    await db.query('DELETE FROM dispatch_codes WHERE id = $1', [id]);
+    res.json({ success: true, message: 'Despacho eliminado.' });
+  } catch (error) {
+    logger.error('deleteDispatchCode error', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ──────────────────────────────────────────────
+// PROVEEDOR: Pedidos disponibles para agregar al despacho
+// GET /api/dispatch/:id/available-requests
+// ──────────────────────────────────────────────
+const getAvailableRequests = async (req, res) => {
+  const { id } = req.params;
+  const providerId = req.user.id;
+
+  try {
+    // Verificar que el despacho pertenece al proveedor
+    const dispatch = await db.query(
+      `SELECT id FROM dispatch_codes WHERE id = $1 AND provider_id = $2`,
+      [id, providerId]
+    );
+    if (dispatch.rows.length === 0) {
+      return res.status(404).json({ error: 'Código de despacho no encontrado.' });
+    }
+
+    // Pedidos del proveedor en estado asignable y que no estén en un despacho activo
+    const result = await db.query(
+      `SELECT r.id, r.request_text, r.customer_name, r.customer_phone,
+              r.status, r.total_price,
+              ST_Y(r.customer_location::geometry) AS lat,
+              ST_X(r.customer_location::geometry) AS lng
+       FROM requests r
+       WHERE r.provider_id = $1
+         AND r.status IN ('assigned', 'waiting_confirmation', 'price_confirmed')
+         AND r.id NOT IN (
+           SELECT dcr.request_id
+           FROM dispatch_code_requests dcr
+           JOIN dispatch_codes dc ON dc.id = dcr.dispatch_code_id
+           WHERE dc.status NOT IN ('completed')
+         )
+       ORDER BY r.assigned_at DESC`,
+      [providerId]
+    );
+
+    res.json({ success: true, requests: result.rows });
+  } catch (error) {
+    logger.error('getAvailableRequests error', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+};
+
 module.exports = {
   createDispatchCode,
   getProviderDispatchCodes,
@@ -602,4 +674,6 @@ module.exports = {
   departDispatch,
   deliverRequest,
   lookupDelivery,
+  deleteDispatchCode,
+  getAvailableRequests,
 };
