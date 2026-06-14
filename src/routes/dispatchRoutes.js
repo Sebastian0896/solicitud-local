@@ -12,6 +12,8 @@ const {
   confirmDispatch,
   departDispatch,
   deliverRequest,
+  closeDispatch,
+  reopenDispatch,
   rejectDispatch,
   lookupDelivery,
   deleteDispatchCode,
@@ -28,6 +30,8 @@ router.post('/:id/requests', authenticate, requireProvider, addRequestToDispatch
 router.delete('/:id/requests/:requestId', authenticate, requireProvider, removeRequestFromDispatch);
 router.post('/:id/assign', authenticate, requireProvider, assignDelivery);
 router.delete('/:id', authenticate, requireProvider, deleteDispatchCode);
+router.post('/:id/close', authenticate, requireProvider, closeDispatch);
+router.post('/:id/reopen', authenticate, requireProvider, reopenDispatch);
 router.get('/:id/available-requests', authenticate, requireProvider, getAvailableRequests);
 
 // ── Delivery ───────────────────────────────────────────────

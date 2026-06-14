@@ -340,7 +340,7 @@ const getDeliveryDispatchCodes = async (req, res) => {
        JOIN users u ON u.id = dc.provider_id
        LEFT JOIN dispatch_code_requests dcr ON dcr.dispatch_code_id = dc.id
        LEFT JOIN requests r ON r.id = dcr.request_id
-       WHERE dc.delivery_id = $1 AND dc.status != 'completed'
+       WHERE dc.delivery_id = $1 AND dc.status NOT IN ('completed', 'fulfilled')
        GROUP BY dc.id, u.business_name, u.name
        ORDER BY dc.date DESC, dc.created_at DESC`,
       [deliveryId]
@@ -526,7 +526,7 @@ const deliverRequest = async (req, res) => {
       [req_provider_id]
     );
 
-    // Verificar si todos los pedidos del despacho fueron entregados
+    // Si todos los pedidos del despacho fueron entregados → fulfilled (proveedor decide qué hacer)
     const remaining = await client.query(
       `SELECT COUNT(*) FROM dispatch_code_requests dcr
        JOIN requests r ON r.id = dcr.request_id
@@ -535,7 +535,7 @@ const deliverRequest = async (req, res) => {
     );
     if (parseInt(remaining.rows[0].count) === 0) {
       await client.query(
-        `UPDATE dispatch_codes SET status = 'completed' WHERE id = $1`,
+        `UPDATE dispatch_codes SET status = 'fulfilled' WHERE id = $1`,
         [id]
       );
     }
@@ -664,6 +664,78 @@ const getAvailableRequests = async (req, res) => {
 };
 
 // ──────────────────────────────────────────────
+// PROVEEDOR: Cerrar despacho completado (fulfilled → completed)
+// POST /api/dispatch/:id/close
+// ──────────────────────────────────────────────
+const closeDispatch = async (req, res) => {
+  const { id } = req.params;
+  const providerId = req.user.id;
+
+  try {
+    const dispatch = await db.query(
+      `SELECT status FROM dispatch_codes WHERE id = $1 AND provider_id = $2`,
+      [id, providerId]
+    );
+    if (dispatch.rows.length === 0) {
+      return res.status(404).json({ error: 'Despacho no encontrado.' });
+    }
+    if (dispatch.rows[0].status !== 'fulfilled') {
+      return res.status(400).json({ error: 'Solo puedes cerrar un despacho completamente entregado.' });
+    }
+
+    await db.query(`UPDATE dispatch_codes SET status = 'completed' WHERE id = $1`, [id]);
+    logger.info('Despacho cerrado por proveedor', { dispatchId: id, providerId });
+    res.json({ success: true, message: 'Despacho cerrado.' });
+  } catch (error) {
+    logger.error('closeDispatch error', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ──────────────────────────────────────────────
+// PROVEEDOR: Reabrir despacho (fulfilled → active)
+// POST /api/dispatch/:id/reopen
+// ──────────────────────────────────────────────
+const reopenDispatch = async (req, res) => {
+  const { id } = req.params;
+  const providerId = req.user.id;
+
+  try {
+    const dispatch = await db.query(
+      `SELECT dc.status, dc.delivery_id, u.fcm_token, u.name AS delivery_name
+       FROM dispatch_codes dc
+       LEFT JOIN users u ON u.id = dc.delivery_id
+       WHERE dc.id = $1 AND dc.provider_id = $2`,
+      [id, providerId]
+    );
+    if (dispatch.rows.length === 0) {
+      return res.status(404).json({ error: 'Despacho no encontrado.' });
+    }
+    if (dispatch.rows[0].status !== 'fulfilled') {
+      return res.status(400).json({ error: 'Solo puedes reabrir un despacho completamente entregado.' });
+    }
+
+    await db.query(`UPDATE dispatch_codes SET status = 'active' WHERE id = $1`, [id]);
+
+    // Notificar al delivery que hay nuevos pedidos por recoger
+    if (dispatch.rows[0].fcm_token) {
+      await FirebaseService.sendNotification(
+        dispatch.rows[0].fcm_token,
+        '📦 Despacho reabierto',
+        'El negocio reabrió el despacho. Revisa si hay nuevos pedidos.',
+        { type: 'dispatch_reopened', dispatchId: id }
+      ).catch(() => {});
+    }
+
+    logger.info('Despacho reabierto por proveedor', { dispatchId: id, providerId });
+    res.json({ success: true, message: 'Despacho reabierto.' });
+  } catch (error) {
+    logger.error('reopenDispatch error', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ──────────────────────────────────────────────
 // DELIVERY: Rechazar un despacho asignado (solo si está pending)
 // POST /api/dispatch/:id/reject
 // ──────────────────────────────────────────────
@@ -722,6 +794,8 @@ module.exports = {
   confirmDispatch,
   departDispatch,
   deliverRequest,
+  closeDispatch,
+  reopenDispatch,
   rejectDispatch,
   lookupDelivery,
   deleteDispatchCode,
