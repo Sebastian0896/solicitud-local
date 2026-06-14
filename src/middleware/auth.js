@@ -56,4 +56,11 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
-module.exports = { authenticate, requireCustomer, requireProvider, requireAdmin };
+const requireDelivery = (req, res, next) => {
+  if (req.user.role !== 'delivery') {
+    return res.status(403).json({ error: 'Access denied. Delivery role required.' });
+  }
+  next();
+};
+
+module.exports = { authenticate, requireCustomer, requireProvider, requireAdmin, requireDelivery };

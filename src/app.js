@@ -15,6 +15,7 @@ const categoryRoutes = require('./routes/categoryRoutes');
 const eventRoutes = require('./routes/eventRoutes');
 const chatRoutes = require('./routes/chatRoutes');
 const ratingRoutes = require('./routes/ratingRoutes');
+const dispatchRoutes = require('./routes/dispatchRoutes');
 
 const { 
   generalLimiter, 
@@ -67,6 +68,7 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/events', eventLimiter, eventRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/ratings', ratingRoutes);
+app.use('/api/dispatch', dispatchRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {

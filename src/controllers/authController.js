@@ -40,32 +40,58 @@ const generateRefreshToken = async (userId, ip) => {
   return token;
 };
 
+// Genera un código único DEL-XXXX para el rol delivery
+const generateDeliveryCode = async () => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let code, exists;
+  do {
+    const suffix = Array.from({ length: 4 }, () =>
+      chars[Math.floor(Math.random() * chars.length)]
+    ).join('');
+    code = `DEL-${suffix}`;
+    const result = await db.query(
+      'SELECT id FROM users WHERE delivery_code = $1',
+      [code]
+    );
+    exists = result.rows.length > 0;
+  } while (exists);
+  return code;
+};
+
 const register = async (req, res) => {
   const { email, password, name, phone, role, businessName } = req.body;
   const clientIp = req.ip || req.connection.remoteAddress;
-  
+
+  const allowedRoles = ['customer', 'provider', 'delivery', 'admin'];
+  if (!allowedRoles.includes(role)) {
+    return res.status(400).json({ error: 'Rol inválido.' });
+  }
+
   try {
     const existingUser = await db.query('SELECT id FROM users WHERE email = $1', [email]);
     if (existingUser.rows.length > 0) {
       return res.status(400).json({ error: 'Email already registered' });
     }
-    
+
     const passwordHash = await bcrypt.hash(password, 10);
-    
+
+    // Generar código personal para deliveries
+    const deliveryCode = role === 'delivery' ? await generateDeliveryCode() : null;
+
     const result = await db.query(
-      `INSERT INTO users (email, password_hash, name, phone, role, business_name, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, true)
-       RETURNING id, email, name, role, business_name`,
-      [email, passwordHash, name, phone, role, businessName || null]
+      `INSERT INTO users (email, password_hash, name, phone, role, business_name, is_active, delivery_code)
+       VALUES ($1, $2, $3, $4, $5, $6, true, $7)
+       RETURNING id, email, name, role, business_name, delivery_code`,
+      [email, passwordHash, name, phone, role, businessName || null, deliveryCode]
     );
-    
+
     const user = result.rows[0];
-    
+
     const accessToken = generateAccessToken(user);
     const refreshToken = await generateRefreshToken(user.id, clientIp);
-    
+
     logger.info('Usuario registrado', { userId: user.id, email, role, ip: clientIp });
-    
+
     res.status(201).json({
       accessToken,
       refreshToken,
@@ -74,7 +100,8 @@ const register = async (req, res) => {
         email: user.email,
         name: user.name,
         role: user.role,
-        businessName: user.business_name
+        businessName: user.business_name,
+        deliveryCode: user.delivery_code,
       }
     });
   } catch (error) {
@@ -89,7 +116,7 @@ const login = async (req, res) => {
   
   try {
     const result = await db.query(
-      `SELECT id, email, name, password_hash, role, business_name, subscription_active
+      `SELECT id, email, name, password_hash, role, business_name, subscription_active, delivery_code
        FROM users WHERE email = $1 AND is_active = true`,
       [email]
     );
@@ -121,7 +148,8 @@ const login = async (req, res) => {
         name: user.name,
         role: user.role,
         businessName: user.business_name,
-        subscriptionActive: user.subscription_active
+        subscriptionActive: user.subscription_active,
+        deliveryCode: user.delivery_code,
       }
     });
   } catch (error) {
