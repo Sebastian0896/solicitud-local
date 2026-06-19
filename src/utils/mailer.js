@@ -12,8 +12,18 @@ const _transporter = nodemailer.createTransport({
 });
 
 const sendVerificationEmail = async (email, name, code) => {
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    logger.warn('SMTP no configurado. Código de verificación:', { email, code });
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS;
+
+  logger.info('sendVerificationEmail llamado', {
+    to: email,
+    smtpUser: smtpUser ? `${smtpUser.slice(0, 4)}***` : 'NO CONFIGURADO',
+    smtpPassSet: !!smtpPass,
+    code, // eliminar este log cuando el email funcione
+  });
+
+  if (!smtpUser || !smtpPass) {
+    logger.warn('SMTP no configurado — el código está en este log:', { email, code });
     return;
   }
   await _transporter.sendMail({
