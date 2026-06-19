@@ -37,14 +37,14 @@ const toggleAvailability = async (req, res) => {
 
 // Actualizar perfil
 const updateProfile = async (req, res) => {
-  const { name, phone, businessName, serviceRadiusKm, maxRequests } = req.body;
+  const { name, phone, businessName, serviceRadiusKm, maxRequests, address, addressReference } = req.body;
   const userId = req.user.id;
-  
+
   try {
     const fields = [];
     const values = [];
     let idx = 1;
-    
+
     if (name) {
       fields.push(`name = $${idx++}`);
       values.push(name);
@@ -64,6 +64,14 @@ const updateProfile = async (req, res) => {
     if (maxRequests && req.user.role === 'provider') {
       fields.push(`max_requests = $${idx++}`);
       values.push(maxRequests);
+    }
+    if (address !== undefined) {
+      fields.push(`address = $${idx++}`);
+      values.push(address || null);
+    }
+    if (addressReference !== undefined) {
+      fields.push(`address_reference = $${idx++}`);
+      values.push(addressReference || null);
     }
     
     if (fields.length === 0) {
@@ -138,10 +146,11 @@ const getProfile = async (req, res) => {
   
   try {
     const result = await db.query(
-      `SELECT id, email, name, phone, role, business_name, 
-              available, active_requests, max_requests, 
+      `SELECT id, email, name, phone, role, business_name,
+              available, active_requests, max_requests,
               service_radius_km, subscription_active, subscription_expires_at,
-              ST_X(current_location::geometry) as lng, 
+              address, address_reference, is_verified, delivery_code,
+              ST_X(current_location::geometry) as lng,
               ST_Y(current_location::geometry) as lat
        FROM users WHERE id = $1`,
       [userId]

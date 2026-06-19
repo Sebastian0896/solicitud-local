@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const db = require('../config/database');
 const logger = require('../utils/logger');
+const { sendVerificationEmail } = require('../utils/mailer');
 
 // Generar access token (corto plazo)
 const generateAccessToken = (user) => {
@@ -59,7 +60,7 @@ const generateDeliveryCode = async () => {
 };
 
 const register = async (req, res) => {
-  const { email, password, name, phone, role, businessName } = req.body;
+  const { email, password, name, phone, role, businessName, address, addressReference } = req.body;
   const clientIp = req.ip || req.connection.remoteAddress;
 
   const allowedRoles = ['customer', 'provider', 'delivery', 'admin'];
@@ -74,27 +75,33 @@ const register = async (req, res) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
-
-    // Generar código personal para deliveries
     const deliveryCode = role === 'delivery' ? await generateDeliveryCode() : null;
 
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const verificationExpires = new Date(Date.now() + 30 * 60 * 1000); // 30 min
+
     const result = await db.query(
-      `INSERT INTO users (email, password_hash, name, phone, role, business_name, is_active, delivery_code)
-       VALUES ($1, $2, $3, $4, $5, $6, true, $7)
+      `INSERT INTO users (email, password_hash, name, phone, role, business_name, address, address_reference,
+                          is_active, delivery_code, is_verified, verification_code, verification_expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9, false, $10, $11)
        RETURNING id, email, name, role, business_name, delivery_code`,
-      [email, passwordHash, name, phone, role, businessName || null, deliveryCode]
+      [email, passwordHash, name, phone, role, businessName || null,
+       address || null, addressReference || null,
+       deliveryCode, verificationCode, verificationExpires]
     );
 
     const user = result.rows[0];
 
-    const accessToken = generateAccessToken(user);
-    const refreshToken = await generateRefreshToken(user.id, clientIp);
+    // Send verification email (non-blocking: registration still succeeds if email fails)
+    sendVerificationEmail(email, name, verificationCode).catch((err) =>
+      logger.error('Error enviando email de verificación', { email, error: err.message })
+    );
 
     logger.info('Usuario registrado', { userId: user.id, email, role, ip: clientIp });
 
     res.status(201).json({
-      accessToken,
-      refreshToken,
+      success: true,
+      message: 'Cuenta creada. Revisa tu correo para verificar tu cuenta.',
       user: {
         id: user.id,
         email: user.email,
@@ -102,6 +109,7 @@ const register = async (req, res) => {
         role: user.role,
         businessName: user.business_name,
         deliveryCode: user.delivery_code,
+        isVerified: false,
       }
     });
   } catch (error) {
@@ -116,7 +124,7 @@ const login = async (req, res) => {
   
   try {
     const result = await db.query(
-      `SELECT id, email, name, password_hash, role, business_name, subscription_active, delivery_code
+      `SELECT id, email, name, password_hash, role, business_name, subscription_active, delivery_code, is_verified
        FROM users WHERE email = $1 AND is_active = true`,
       [email]
     );
@@ -125,13 +133,18 @@ const login = async (req, res) => {
       logger.warn('Intento de login fallido', { email, ip: clientIp, reason: 'user_not_found' });
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-    
+
     const user = result.rows[0];
     const validPassword = await bcrypt.compare(password, user.password_hash);
-    
+
     if (!validPassword) {
       logger.warn('Intento de login fallido', { email, ip: clientIp, reason: 'wrong_password' });
       return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    if (!user.is_verified) {
+      logger.warn('Login con cuenta no verificada', { email, ip: clientIp });
+      return res.status(403).json({ error: 'EMAIL_NOT_VERIFIED' });
     }
     
     const accessToken = generateAccessToken(user);
@@ -245,6 +258,87 @@ const logout = async (req, res) => {
   }
 };
 
+const verifyEmail = async (req, res) => {
+  const { email, code } = req.body;
+  if (!email || !code) {
+    return res.status(400).json({ error: 'Email y código requeridos.' });
+  }
+
+  try {
+    const result = await db.query(
+      `SELECT id, verification_code, verification_expires_at, is_verified
+       FROM users WHERE email = $1 AND is_active = true`,
+      [email]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado.' });
+    }
+    const user = result.rows[0];
+
+    if (user.is_verified) {
+      return res.json({ success: true, message: 'Cuenta ya verificada.' });
+    }
+    if (!user.verification_code || user.verification_code !== code.trim()) {
+      return res.status(400).json({ error: 'Código incorrecto.' });
+    }
+    if (new Date() > new Date(user.verification_expires_at)) {
+      return res.status(400).json({ error: 'El código expiró. Solicita uno nuevo.' });
+    }
+
+    await db.query(
+      `UPDATE users SET is_verified = true, verification_code = NULL, verification_expires_at = NULL
+       WHERE id = $1`,
+      [user.id]
+    );
+
+    logger.info('Email verificado', { userId: user.id, email });
+    res.json({ success: true, message: '¡Cuenta verificada exitosamente!' });
+  } catch (error) {
+    logger.error('verifyEmail error', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+};
+
+const resendVerification = async (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: 'Email requerido.' });
+  }
+
+  try {
+    const result = await db.query(
+      `SELECT id, name, is_verified FROM users WHERE email = $1 AND is_active = true`,
+      [email]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado.' });
+    }
+    const user = result.rows[0];
+
+    if (user.is_verified) {
+      return res.json({ success: true, message: 'Cuenta ya verificada.' });
+    }
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expires = new Date(Date.now() + 30 * 60 * 1000);
+
+    await db.query(
+      `UPDATE users SET verification_code = $1, verification_expires_at = $2 WHERE id = $3`,
+      [code, expires, user.id]
+    );
+
+    sendVerificationEmail(email, user.name, code).catch((err) =>
+      logger.error('Error reenviando email', { email, error: err.message })
+    );
+
+    logger.info('Código de verificación reenviado', { userId: user.id, email });
+    res.json({ success: true, message: 'Código reenviado. Revisa tu correo.' });
+  } catch (error) {
+    logger.error('resendVerification error', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+};
+
 const revokeAllUserTokens = async (req, res) => {
   const userId = req.user.userId;
   
@@ -262,10 +356,12 @@ const revokeAllUserTokens = async (req, res) => {
   }
 };
 
-module.exports = { 
-  register, 
-  login, 
-  refreshToken, 
+module.exports = {
+  register,
+  login,
+  refreshToken,
   logout,
-  revokeAllUserTokens
+  revokeAllUserTokens,
+  verifyEmail,
+  resendVerification,
 };

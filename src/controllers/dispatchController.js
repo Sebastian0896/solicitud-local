@@ -48,10 +48,13 @@ const fetchDispatchWithRequests = async (dispatchId) => {
     `SELECT
        r.id, r.request_text, r.status, r.customer_name, r.customer_phone,
        r.provider_name,
+       cu.address AS customer_address,
+       cu.address_reference AS customer_address_reference,
        ST_Y(r.customer_location::geometry) AS lat,
        ST_X(r.customer_location::geometry) AS lng
      FROM dispatch_code_requests dcr
      JOIN requests r ON r.id = dcr.request_id
+     LEFT JOIN users cu ON cu.id = r.customer_id
      WHERE dcr.dispatch_code_id = $1
      ORDER BY dcr.added_at`,
     [dispatchId]
