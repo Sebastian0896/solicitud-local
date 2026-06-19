@@ -35,10 +35,8 @@ const logger = winston.createLogger({
       maxsize: 5242880, // 5MB
       maxFiles: 5,
     }),
-    // Consola en desarrollo
-    ...(process.env.NODE_ENV !== 'production' 
-      ? [new winston.transports.Console({ format: consoleFormat })]
-      : [])
+    // Consola siempre activa (Render captura stdout/stderr)
+    new winston.transports.Console({ format: consoleFormat })
   ],
 });
 
