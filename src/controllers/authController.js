@@ -71,7 +71,7 @@ const register = async (req, res) => {
   try {
     const existingUser = await db.query('SELECT id FROM users WHERE email = $1', [email]);
     if (existingUser.rows.length > 0) {
-      return res.status(400).json({ error: 'Email already registered' });
+      return res.status(400).json({ error: 'EMAIL_ALREADY_REGISTERED', message: 'Ya existe una cuenta con ese correo.' });
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
@@ -131,7 +131,7 @@ const login = async (req, res) => {
     
     if (result.rows.length === 0) {
       logger.warn('Intento de login fallido', { email, ip: clientIp, reason: 'user_not_found' });
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ error: 'INVALID_CREDENTIALS', message: 'Correo o contraseña incorrectos.' });
     }
 
     const user = result.rows[0];
@@ -139,12 +139,12 @@ const login = async (req, res) => {
 
     if (!validPassword) {
       logger.warn('Intento de login fallido', { email, ip: clientIp, reason: 'wrong_password' });
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ error: 'INVALID_CREDENTIALS', message: 'Correo o contraseña incorrectos.' });
     }
 
     if (!user.is_verified) {
       logger.warn('Login con cuenta no verificada', { email, ip: clientIp });
-      return res.status(403).json({ error: 'EMAIL_NOT_VERIFIED' });
+      return res.status(403).json({ error: 'EMAIL_NOT_VERIFIED', message: 'Debes verificar tu correo antes de iniciar sesión.' });
     }
     
     const accessToken = generateAccessToken(user);
