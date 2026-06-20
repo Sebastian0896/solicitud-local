@@ -26,8 +26,9 @@ const sendVerificationEmail = async (email, name, code) => {
     logger.warn('SMTP no configurado — el código está en este log:', { email, code });
     return;
   }
+  const fromEmail = process.env.SMTP_FROM || smtpUser;
   await _transporter.sendMail({
-    from: `"QuikoYA" <${process.env.SMTP_USER}>`,
+    from: `"QuikoYA" <${fromEmail}>`,
     to: email,
     subject: 'Verifica tu cuenta en QuikoYA',
     html: `
