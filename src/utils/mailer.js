@@ -7,11 +7,10 @@ const sendVerificationEmail = async (email, name, code) => {
   logger.info('sendVerificationEmail llamado', {
     to: email,
     apiKeySet: !!apiKey,
-    code, // eliminar este log cuando el email funcione
   });
 
   if (!apiKey) {
-    logger.warn('BREVO_API_KEY no configurada — el código está en este log:', { email, code });
+    logger.warn('BREVO_API_KEY no configurada', { email });
     return;
   }
 
