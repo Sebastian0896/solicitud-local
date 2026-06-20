@@ -15,7 +15,7 @@ const getProviderAssignedRequests = async (req, res) => {
     const providerLng = providerResult.rows[0]?.lng;
     
     let query = `
-      SELECT id, request_text, customer_name, customer_phone, status, created_at, assigned_at, total_price
+      SELECT id, request_text, customer_name, customer_phone, status, created_at, assigned_at, total_price, image_url
     `;
     
     if (providerLat && providerLng) {

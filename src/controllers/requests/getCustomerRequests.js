@@ -28,7 +28,8 @@ const getCustomerRequests = async (req, res) => {
         ST_Y(u.current_location::geometry) AS provider_lat,
         ST_X(u.current_location::geometry) AS provider_lng,
         u.business_name                    AS provider_business_name,
-        EXISTS(SELECT 1 FROM ratings WHERE request_id = r.id) AS rated_by_customer
+        EXISTS(SELECT 1 FROM ratings WHERE request_id = r.id) AS rated_by_customer,
+        r.image_url
        FROM requests r
        LEFT JOIN categories c ON r.category_id = c.id
        LEFT JOIN users u ON r.provider_id = u.id

@@ -30,7 +30,8 @@ const getPendingRequests = async (req, res) => {
         c.name as category_name,
         c.icon as category_icon,
         ST_X(r.customer_location::geometry) as lng,
-        ST_Y(r.customer_location::geometry) as lat
+        ST_Y(r.customer_location::geometry) as lat,
+        r.image_url
        FROM requests r
        JOIN categories c ON r.category_id = c.id
        WHERE r.status = 'pending'

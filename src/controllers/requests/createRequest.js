@@ -3,7 +3,7 @@ const FirebaseService = require('../../services/firebaseService');
 const { getNearbyProviders } = require('../../services/geolocationService');
 
 const createRequest = async (req, res) => {
-  const { request_text, category_id, lat, lng } = req.body;
+  const { request_text, category_id, lat, lng, image_url } = req.body;
   const customerId = req.user.id;
   const customerName = req.user.name;
   const customerPhone = req.user.phone;
@@ -23,13 +23,13 @@ const createRequest = async (req, res) => {
     }
 
     const result = await db.query(
-      `INSERT INTO requests 
-       (id, customer_id, request_text, status, customer_name, customer_phone, 
-        created_at, original_created_at, category_id, customer_location, repeat_count)
-       VALUES (gen_random_uuid(), $1, $2, 'pending', $3, $4, NOW(), NOW(), $5, 
-               ST_SetSRID(ST_MakePoint($6, $7), 4326), 1)
+      `INSERT INTO requests
+       (id, customer_id, request_text, status, customer_name, customer_phone,
+        created_at, original_created_at, category_id, customer_location, repeat_count, image_url)
+       VALUES (gen_random_uuid(), $1, $2, 'pending', $3, $4, NOW(), NOW(), $5,
+               ST_SetSRID(ST_MakePoint($6, $7), 4326), 1, $8)
        RETURNING id`,
-      [customerId, request_text, customerName, customerPhone, category_id, lng, lat]
+      [customerId, request_text, customerName, customerPhone, category_id, lng, lat, image_url || null]
     );
 
     const requestId = result.rows[0].id;
