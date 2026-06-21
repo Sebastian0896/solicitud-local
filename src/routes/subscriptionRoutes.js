@@ -3,6 +3,7 @@ const {
   createCheckoutSession,
   lsWebhook,
   lsReturn,
+  getManagement,
   activateSubscription,
   checkSubscription,
 } = require('../controllers/subscriptionController');
@@ -21,6 +22,7 @@ router.post('/ls/webhook', lsWebhook);
 router.get('/ls/return', lsReturn);
 
 // ── Rutas comunes ─────────────────────────────────────────────────────────────
+router.get('/manage', authenticate, requireProvider, getManagement);
 router.post('/activate', authenticate, requireProvider, activateSubscription);
 router.get('/status', authenticate, requireProvider, checkSubscription);
 

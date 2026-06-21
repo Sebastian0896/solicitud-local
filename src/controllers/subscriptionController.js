@@ -3,22 +3,20 @@ const { createCheckout, verifyWebhookSignature } = require('../services/lemonSqu
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
-/**
- * Activates a provider subscription and records the payment.
- * expiresAt: ISO string from Lemon Squeezy (renews_at) or null for +30 days.
- */
-const _activateSubscription = async (userId, { transactionId, expiresAt }) => {
+const _activateSubscription = async (userId, { transactionId, expiresAt, lsSubId, portalUrl }) => {
   const expiry = expiresAt
     ? `'${expiresAt}'::timestamptz`
     : `NOW() + INTERVAL '30 days'`;
 
   const result = await db.query(
     `UPDATE users
-     SET subscription_active     = true,
-         subscription_expires_at = ${expiry}
+     SET subscription_active       = true,
+         subscription_expires_at   = ${expiry},
+         ls_subscription_id        = COALESCE($2, ls_subscription_id),
+         ls_customer_portal_url    = COALESCE($3, ls_customer_portal_url)
      WHERE id = $1 AND role = 'provider'
      RETURNING id, subscription_active, subscription_expires_at`,
-    [userId]
+    [userId, lsSubId || null, portalUrl || null]
   );
 
   if (result.rows.length === 0) return null;
@@ -35,9 +33,7 @@ const _activateSubscription = async (userId, { transactionId, expiresAt }) => {
 
 const _deactivateSubscription = async (userId) => {
   await db.query(
-    `UPDATE users
-     SET subscription_active = false
-     WHERE id = $1 AND role = 'provider'`,
+    `UPDATE users SET subscription_active = false WHERE id = $1 AND role = 'provider'`,
     [userId]
   );
 };
@@ -46,7 +42,6 @@ const _deactivateSubscription = async (userId) => {
 
 /**
  * POST /api/subscriptions/checkout
- * Creates a Lemon Squeezy hosted checkout session and returns the URL.
  */
 const createCheckoutSession = async (req, res) => {
   const userId = req.user.id;
@@ -67,7 +62,6 @@ const createCheckoutSession = async (req, res) => {
     }
 
     const checkoutUrl = await createCheckout({ userId, userEmail: user?.email });
-
     res.json({ checkoutUrl });
   } catch (error) {
     console.error('[subscription] createCheckoutSession error:', error.message);
@@ -77,8 +71,6 @@ const createCheckoutSession = async (req, res) => {
 
 /**
  * POST /api/subscriptions/ls/webhook
- * Lemon Squeezy calls this endpoint after payment events.
- * No JWT auth — uses HMAC-SHA256 signature verification.
  */
 const lsWebhook = async (req, res) => {
   const sig = req.headers['x-signature'] || '';
@@ -95,71 +87,57 @@ const lsWebhook = async (req, res) => {
 
   console.log(`[LS webhook] event=${eventName} userId=${userId}`);
 
-  if (!userId) {
-    return res.json({ received: true });
-  }
+  if (!userId) return res.json({ received: true });
 
   try {
     const attrs = data?.attributes || {};
     const txId = `ls_${eventName}_${data?.id || Date.now()}`;
+    const lsSubId = data?.id ? String(data.id) : null;
+    const portalUrl = attrs.urls?.customer_portal || null;
 
     switch (eventName) {
 
-      // ── Activar ────────────────────────────────────────────────────────────
       case 'subscription_created':
       case 'subscription_resumed':
       case 'subscription_unpaused': {
-        const expiresAt = attrs.renews_at || null;
-        await _activateSubscription(userId, { transactionId: txId, expiresAt });
-        console.log(`[LS] Activada (${eventName}) userId=${userId} hasta ${expiresAt}`);
+        await _activateSubscription(userId, {
+          transactionId: txId,
+          expiresAt: attrs.renews_at || null,
+          lsSubId,
+          portalUrl,
+        });
+        console.log(`[LS] Activada (${eventName}) userId=${userId} hasta ${attrs.renews_at}`);
         break;
       }
 
-      // Renovación mensual exitosa — actualiza la fecha de expiración
-      case 'subscription_payment_success': {
-        const expiresAt = attrs.renews_at || null;
-        await _activateSubscription(userId, { transactionId: txId, expiresAt });
-        console.log(`[LS] Renovada userId=${userId} hasta ${expiresAt}`);
-        break;
-      }
-
-      // Pago fallido recuperado — reactivar
+      case 'subscription_payment_success':
       case 'subscription_payment_recovered': {
-        const expiresAt = attrs.renews_at || null;
-        await _activateSubscription(userId, { transactionId: txId, expiresAt });
-        console.log(`[LS] Pago recuperado userId=${userId}`);
+        await _activateSubscription(userId, {
+          transactionId: txId,
+          expiresAt: attrs.renews_at || null,
+          lsSubId,
+          portalUrl,
+        });
+        console.log(`[LS] Renovada/recuperada userId=${userId} hasta ${attrs.renews_at}`);
         break;
       }
 
-      // ── Advertencia — sigue activa hasta el fin del período ────────────────
-      case 'subscription_cancelled': {
-        // No desactivamos aún — LS sigue activa hasta que venza
-        // La desactivación real llega con subscription_expired
-        console.log(`[LS] Cancelada (seguirá activa hasta ${attrs.ends_at}) userId=${userId}`);
+      case 'subscription_cancelled':
+        console.log(`[LS] Cancelada (activa hasta ${attrs.ends_at}) userId=${userId}`);
         break;
-      }
 
-      case 'subscription_paused': {
+      case 'subscription_paused':
         console.log(`[LS] Pausada userId=${userId}`);
         break;
-      }
 
-      case 'subscription_payment_failed': {
-        // LS reintentará el cobro — no desactivamos aún
+      case 'subscription_payment_failed':
         console.log(`[LS] Pago fallido userId=${userId} — LS reintentará`);
         break;
-      }
 
-      // ── Desactivar ─────────────────────────────────────────────────────────
-      case 'subscription_expired': {
-        await _deactivateSubscription(userId);
-        console.log(`[LS] Expirada → desactivada userId=${userId}`);
-        break;
-      }
-
+      case 'subscription_expired':
       case 'order_refunded': {
         await _deactivateSubscription(userId);
-        console.log(`[LS] Reembolso → desactivada userId=${userId}`);
+        console.log(`[LS] Desactivada (${eventName}) userId=${userId}`);
         break;
       }
 
@@ -176,8 +154,6 @@ const lsWebhook = async (req, res) => {
 
 /**
  * GET /api/subscriptions/ls/return
- * Lemon Squeezy redirects here after checkout.
- * The Flutter WebView intercepts this URL before rendering.
  */
 const lsReturn = (_req, res) => {
   res.send(`
@@ -203,6 +179,43 @@ const lsReturn = (_req, res) => {
 };
 
 /**
+ * GET /api/subscriptions/manage
+ * Devuelve status, próximo cobro, portal URL e historial de pagos.
+ */
+const getManagement = async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const userResult = await db.query(
+      `SELECT subscription_active, subscription_expires_at,
+              ls_customer_portal_url,
+              CASE
+                WHEN subscription_expires_at < NOW() THEN 'expired'
+                WHEN subscription_active = true       THEN 'active'
+                ELSE 'inactive'
+              END AS status
+       FROM users WHERE id = $1`,
+      [userId]
+    );
+
+    const paymentsResult = await db.query(
+      `SELECT transaction_id, amount, currency, status, created_at
+       FROM subscription_payments
+       WHERE user_id = $1
+       ORDER BY created_at DESC
+       LIMIT 12`,
+      [userId]
+    );
+
+    res.json({
+      ...userResult.rows[0],
+      payments: paymentsResult.rows,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
  * POST /api/subscriptions/activate  (manual / admin)
  */
 const activateSubscription = async (req, res) => {
@@ -219,9 +232,7 @@ const activateSubscription = async (req, res) => {
       expiresAt: null,
     });
 
-    if (!activated) {
-      return res.status(404).json({ error: 'User not found' });
-    }
+    if (!activated) return res.status(404).json({ error: 'User not found' });
 
     res.json({
       success: true,
@@ -238,7 +249,6 @@ const activateSubscription = async (req, res) => {
  */
 const checkSubscription = async (req, res) => {
   const userId = req.user.id;
-
   try {
     const result = await db.query(
       `SELECT subscription_active, subscription_expires_at,
@@ -260,6 +270,7 @@ module.exports = {
   createCheckoutSession,
   lsWebhook,
   lsReturn,
+  getManagement,
   activateSubscription,
   checkSubscription,
 };
