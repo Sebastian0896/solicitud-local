@@ -1,4 +1,5 @@
 const db = require('../config/database');
+const FirebaseService = require('../services/firebaseService');
 
 // Enviar mensaje
 const sendMessage = async (req, res) => {
@@ -50,7 +51,27 @@ const sendMessage = async (req, res) => {
       success: true,
       message: newMessage.rows[0]
     });
-    
+
+    // Notificar al destinatario por FCM (fire-and-forget)
+    const recipientId = isCustomer
+      ? request.provider_id_text
+      : request.customer_id_text;
+    if (recipientId) {
+      db.query('SELECT fcm_token FROM users WHERE id = $1', [recipientId])
+        .then(({ rows }) => {
+          if (!rows[0]?.fcm_token) return;
+          const senderName = req.user.business_name || req.user.name || 'Usuario';
+          const preview = message.trim().substring(0, 80);
+          return FirebaseService.sendNotification(
+            rows[0].fcm_token,
+            `💬 ${senderName}`,
+            preview,
+            { type: 'new_chat_message', requestId }
+          );
+        })
+        .catch(() => {});
+    }
+
   } catch (error) {
     console.error('Error en sendMessage:', error);
     res.status(500).json({ error: error.message });
