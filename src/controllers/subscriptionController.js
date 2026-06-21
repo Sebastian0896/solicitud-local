@@ -1,20 +1,21 @@
 const db = require('../config/database');
-const { createCardNetSession, verifyWebhookSignature } = require('../services/paymentService');
+const { createCheckout, verifyWebhookSignature } = require('../services/lemonSqueezyService');
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Utilidades
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── helpers ─────────────────────────────────────────────────────────────────
 
-/** Genera un ID de orden único con prefijo SL- */
-const generateOrderId = (userId) =>
-  `SL-${userId}-${Date.now()}`;
+/**
+ * Activates a provider subscription and records the payment.
+ * expiresAt: ISO string from Lemon Squeezy (renews_at) or null for +30 days.
+ */
+const _activateSubscription = async (userId, { transactionId, expiresAt }) => {
+  const expiry = expiresAt
+    ? `'${expiresAt}'::timestamptz`
+    : `NOW() + INTERVAL '30 days'`;
 
-/** Activa la suscripción de un usuario por 30 días y registra el pago. */
-const _activateSubscriptionInDb = async (userId, { paymentMethod, transactionId, amount, orderId }) => {
   const result = await db.query(
     `UPDATE users
      SET subscription_active     = true,
-         subscription_expires_at = NOW() + INTERVAL '30 days'
+         subscription_expires_at = ${expiry}
      WHERE id = $1 AND role = 'provider'
      RETURNING id, subscription_active, subscription_expires_at`,
     [userId]
@@ -25,24 +26,29 @@ const _activateSubscriptionInDb = async (userId, { paymentMethod, transactionId,
   await db.query(
     `INSERT INTO subscription_payments
        (user_id, payment_method, transaction_id, amount, currency, status)
-     VALUES ($1, $2, $3, $4, 'DOP', 'active')
-     ON CONFLICT DO NOTHING`,
-    [userId, paymentMethod || 'cardnet', transactionId || orderId, amount || 299]
-  );
+     VALUES ($1, 'lemonsqueezy', $2, 299, 'USD', 'active')`,
+    [userId, transactionId]
+  ).catch(() => {});
 
   return result.rows[0];
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Controladores
-// ─────────────────────────────────────────────────────────────────────────────
+const _deactivateSubscription = async (userId) => {
+  await db.query(
+    `UPDATE users
+     SET subscription_active = false
+     WHERE id = $1 AND role = 'provider'`,
+    [userId]
+  );
+};
+
+// ─── controllers ─────────────────────────────────────────────────────────────
 
 /**
- * POST /api/subscriptions/pay
- * Inicia una sesión de pago con CardNet y devuelve la URL de la
- * página de pago alojada por Azul.
+ * POST /api/subscriptions/checkout
+ * Creates a Lemon Squeezy hosted checkout session and returns the URL.
  */
-const createPaymentSession = async (req, res) => {
+const createCheckoutSession = async (req, res) => {
   const userId = req.user.id;
 
   if (req.user.role !== 'provider') {
@@ -50,138 +56,122 @@ const createPaymentSession = async (req, res) => {
   }
 
   try {
-    // Verificar si ya tiene suscripción activa
     const sub = await db.query(
-      `SELECT subscription_active, subscription_expires_at FROM users WHERE id = $1`,
+      `SELECT subscription_active, subscription_expires_at, email FROM users WHERE id = $1`,
       [userId]
     );
     const user = sub.rows[0];
+
     if (user?.subscription_active && new Date(user.subscription_expires_at) > new Date()) {
       return res.status(409).json({ error: 'Ya tienes una suscripción activa.' });
     }
 
-    const orderId = generateOrderId(userId);
-    const { paymentUrl, azulOrderId } = await createCardNetSession({ userId, orderId });
+    const checkoutUrl = await createCheckout({ userId, userEmail: user?.email });
 
-    // Guardar el intent de pago para validarlo en el webhook
-    await db.query(
-      `INSERT INTO subscription_payments
-         (user_id, payment_method, transaction_id, amount, currency, status)
-       VALUES ($1, 'cardnet', $2, 299, 'DOP', 'pending')`,
-      [userId, orderId]
-    );
-
-    res.json({ paymentUrl, orderId: azulOrderId });
+    res.json({ checkoutUrl });
   } catch (error) {
-    console.error('[subscription] createPaymentSession error:', error.message);
+    console.error('[subscription] createCheckoutSession error:', error.message);
     res.status(502).json({ error: error.message });
   }
 };
 
 /**
- * POST /api/subscriptions/cardnet/webhook
- * CardNet llama a este endpoint cuando el pago se procesa (éxito o fallo).
- * NO requiere autenticación JWT — usa verificación HMAC.
+ * POST /api/subscriptions/ls/webhook
+ * Lemon Squeezy calls this endpoint after payment events.
+ * No JWT auth — uses HMAC-SHA256 signature verification.
  */
-const cardnetWebhook = async (req, res) => {
-  const signature = req.headers['x-azul-signature'] || req.headers['x-cardnet-signature'] || '';
+const lsWebhook = async (req, res) => {
+  const sig = req.headers['x-signature'] || '';
+  const rawBody = req.rawBody;
 
-  if (!verifyWebhookSignature(req.body, signature)) {
-    console.warn('[CardNet webhook] Firma inválida');
+  if (!rawBody || !verifyWebhookSignature(rawBody, sig)) {
+    console.warn('[LS webhook] Firma inválida');
     return res.status(401).json({ error: 'Invalid signature' });
   }
 
-  const {
-    OrderNumber: orderId,
-    ResponseCode,
-    AzulOrderId,
-    CustomField2: userId,      // userId que guardamos al crear la sesión
-    Amount,
-  } = req.body;
+  const { meta, data } = req.body;
+  const eventName = meta?.event_name;
+  const userId = meta?.custom_data?.user_id;
 
-  console.log(`[CardNet webhook] orderId=${orderId} code=${ResponseCode} userId=${userId}`);
+  console.log(`[LS webhook] event=${eventName} userId=${userId}`);
 
-  // CardNet usa '00' como código de éxito
-  if (ResponseCode !== '00') {
-    // Marcar el pago como fallido
-    await db.query(
-      `UPDATE subscription_payments SET status = 'failed' WHERE transaction_id = $1`,
-      [orderId]
-    ).catch(() => {});
+  if (!userId) {
     return res.json({ received: true });
   }
 
   try {
-    const activated = await _activateSubscriptionInDb(userId, {
-      paymentMethod: 'cardnet',
-      transactionId: AzulOrderId || orderId,
-      amount: Amount ? parseInt(Amount) / 100 : 299,
-      orderId,
-    });
+    switch (eventName) {
+      case 'subscription_created':
+      case 'subscription_renewed':
+      case 'subscription_resumed': {
+        const attrs = data?.attributes || {};
+        const expiresAt = attrs.renews_at || null;
+        const txId = `ls_sub_${data?.id || Date.now()}`;
+        await _activateSubscription(userId, { transactionId: txId, expiresAt });
+        console.log(`[LS webhook] Activada userId=${userId} hasta ${expiresAt}`);
+        break;
+      }
 
-    if (!activated) {
-      console.error(`[CardNet webhook] Usuario ${userId} no encontrado`);
+      case 'subscription_expired': {
+        await _deactivateSubscription(userId);
+        console.log(`[LS webhook] Desactivada userId=${userId}`);
+        break;
+      }
+
+      default:
+        console.log(`[LS webhook] Evento ignorado: ${eventName}`);
     }
-
-    res.json({ received: true });
   } catch (error) {
-    console.error('[CardNet webhook] Error activando suscripción:', error);
-    res.status(500).json({ error: error.message });
+    console.error('[LS webhook] Error:', error);
+    return res.status(500).json({ error: error.message });
   }
+
+  res.json({ received: true });
 };
 
 /**
- * GET /api/subscriptions/cardnet/return
- * Azul redirige al navegador aquí tras el pago.
- * La app Flutter intercepta esta URL en el WebView para saber el resultado.
- *
- * El WebView en Flutter monitorea navegaciones a esta URL —
- * no es una API real, solo un punto de intercepción.
+ * GET /api/subscriptions/ls/return
+ * Lemon Squeezy redirects here after checkout.
+ * The Flutter WebView intercepts this URL before rendering.
  */
-const cardnetReturn = async (req, res) => {
-  const { status, orderId, userId } = req.query;
-
-  if (status === 'approved') {
-    // Intentar activar en caso de que el webhook llegue tarde
-    try {
-      await _activateSubscriptionInDb(userId, {
-        paymentMethod: 'cardnet',
-        orderId,
-        amount: 299,
-      });
-    } catch (_) { /* el webhook es la fuente primaria */ }
-  }
-
-  // Respuesta mínima — Flutter la intercepta antes de que se renderice
+const lsReturn = (_req, res) => {
   res.send(`
     <!DOCTYPE html>
     <html>
-      <head><meta charset="utf-8"><title>Solicitud Local</title></head>
-      <body style="font-family:sans-serif;text-align:center;padding:40px">
-        ${status === 'approved'
-          ? '<h2>✅ ¡Pago exitoso!</h2><p>Volviendo a la app...</p>'
-          : '<h2>❌ Pago no completado</h2><p>Volviendo a la app...</p>'}
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>QuikoYA Pro</title>
+        <style>
+          body { font-family: sans-serif; text-align: center; padding: 60px 24px;
+                 background: #f0fdf4; color: #166534; }
+          h2 { font-size: 22px; margin-bottom: 8px; }
+          p  { font-size: 14px; color: #555; }
+        </style>
+      </head>
+      <body>
+        <h2>✅ ¡Suscripción activada!</h2>
+        <p>Volviendo a la app...</p>
       </body>
     </html>
   `);
 };
 
 /**
- * POST /api/subscriptions/activate  (legado / activación manual por admin)
+ * POST /api/subscriptions/activate  (manual / admin)
  */
 const activateSubscription = async (req, res) => {
   const userId = req.user.id;
-  const { paymentMethod, transactionId } = req.body;
+  const { transactionId } = req.body;
 
   try {
     if (req.user.role !== 'provider') {
       return res.status(403).json({ error: 'Only providers can have subscriptions' });
     }
 
-    const activated = await _activateSubscriptionInDb(userId, {
-      paymentMethod: paymentMethod || 'manual',
-      transactionId,
-      amount: 299,
+    const activated = await _activateSubscription(userId, {
+      transactionId: transactionId || `manual_${Date.now()}`,
+      expiresAt: null,
     });
 
     if (!activated) {
@@ -215,7 +205,6 @@ const checkSubscription = async (req, res) => {
        FROM users WHERE id = $1`,
       [userId]
     );
-
     res.json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -223,9 +212,9 @@ const checkSubscription = async (req, res) => {
 };
 
 module.exports = {
-  createPaymentSession,
-  cardnetWebhook,
-  cardnetReturn,
+  createCheckoutSession,
+  lsWebhook,
+  lsReturn,
   activateSubscription,
   checkSubscription,
 };
