@@ -473,6 +473,20 @@ const departDispatch = async (req, res) => {
       ).catch(() => {});
     }
 
+    // Notificar al proveedor que el delivery salió
+    const providerFcm = await db.query(
+      'SELECT fcm_token FROM users WHERE id = $1',
+      [dispatch.rows[0].provider_id]
+    );
+    if (providerFcm.rows[0]?.fcm_token) {
+      await FirebaseService.sendNotification(
+        providerFcm.rows[0].fcm_token,
+        '🚚 Delivery en camino',
+        `${deliveryName} salió a entregar ${requestIds.length} pedido(s).`,
+        { type: 'dispatch_departed', dispatchId: id }
+      ).catch(() => {});
+    }
+
     res.json({ success: true, message: 'Pedidos marcados como en camino.' });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -556,6 +570,23 @@ const deliverRequest = async (req, res) => {
         '📦 Pedido entregado',
         `${deliveryName} ha entregado tu pedido.`,
         { type: 'status_update', status: 'delivered', requestId }
+      ).catch(() => {});
+    }
+
+    // Notificar al proveedor del estado de entrega
+    const providerFcm = await db.query(
+      'SELECT fcm_token FROM users WHERE id = $1',
+      [req_provider_id]
+    );
+    if (providerFcm.rows[0]?.fcm_token) {
+      const allDone = parseInt(remaining.rows[0].count) === 0;
+      await FirebaseService.sendNotification(
+        providerFcm.rows[0].fcm_token,
+        allDone ? '✅ Todos los pedidos entregados' : '📦 Pedido entregado',
+        allDone
+          ? `${deliveryName} completó todos los pedidos del despacho.`
+          : `${deliveryName} entregó un pedido.`,
+        { type: 'dispatch_delivered', dispatchId: id, requestId }
       ).catch(() => {});
     }
 
