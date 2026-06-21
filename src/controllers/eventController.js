@@ -1,5 +1,6 @@
 const db = require('../config/database');
-const logger = require('../utils/logger')
+const logger = require('../utils/logger');
+const FirebaseService = require('../services/firebaseService');
 
 // Agregar evento a un pedido
 const addRequestEvent = async (req, res) => {
@@ -84,31 +85,84 @@ const addRequestEvent = async (req, res) => {
         `UPDATE requests SET total_price = $1, status = 'waiting_confirmation' WHERE id = $2`,
         [amount, id]
       );
+      // Notificar al cliente: pedido aceptado + precio propuesto
+      const customerFcm = await db.query('SELECT fcm_token FROM users WHERE id = $1', [request.customer_id]);
+      if (customerFcm.rows[0]?.fcm_token) {
+        const providerName = req.user.business_name || req.user.name;
+        const priceFormatted = `RD$${parseFloat(amount).toLocaleString('es-DO', { minimumFractionDigits: 0 })}`;
+        FirebaseService.sendNotification(
+          customerFcm.rows[0].fcm_token,
+          '✅ Pedido aceptado',
+          `${providerName} aceptó tu pedido y propone ${priceFormatted}. Revísalo y confirma.`,
+          { type: 'request_accepted', requestId: id }
+        ).catch(() => {});
+        // Registrar en tabla de notificaciones
+        db.query(
+          `INSERT INTO notifications (user_id, title, body, type, request_id, created_at)
+           VALUES ($1, 'Pedido aceptado', $2, 'request_accepted', $3, NOW())`,
+          [request.customer_id, `${providerName} aceptó tu pedido y propone ${priceFormatted}`, id]
+        ).catch(() => {});
+      }
     }
-    
+
     if (event_type === 'price_updated') {
       const newAmount = event_data.new_amount;
       await db.query(
         `UPDATE requests SET total_price = $1 WHERE id = $2`,
         [newAmount, id]
       );
+      // Notificar al cliente que el precio fue actualizado
+      const customerFcm = await db.query('SELECT fcm_token FROM users WHERE id = $1', [request.customer_id]);
+      if (customerFcm.rows[0]?.fcm_token) {
+        const providerName = req.user.business_name || req.user.name;
+        const priceFormatted = `RD$${parseFloat(newAmount).toLocaleString('es-DO', { minimumFractionDigits: 0 })}`;
+        FirebaseService.sendNotification(
+          customerFcm.rows[0].fcm_token,
+          '💰 Precio actualizado',
+          `${providerName} actualizó el precio a ${priceFormatted}. Revísalo y confirma.`,
+          { type: 'request_accepted', requestId: id }
+        ).catch(() => {});
+      }
     }
-    
+
     if (event_type === 'price_accepted') {
       const amount = event_data.amount;
       await db.query(
         `UPDATE requests SET total_price = $1, status = 'assigned' WHERE id = $2`,
         [amount, id]
       );
+      // Notificar al proveedor que el cliente aceptó
+      const providerFcm = await db.query('SELECT fcm_token FROM users WHERE id = $1', [request.provider_id]);
+      if (providerFcm.rows[0]?.fcm_token) {
+        const customerName = req.user.name;
+        const priceFormatted = `RD$${parseFloat(amount).toLocaleString('es-DO', { minimumFractionDigits: 0 })}`;
+        FirebaseService.sendNotification(
+          providerFcm.rows[0].fcm_token,
+          '🎉 Precio aceptado',
+          `${customerName} aceptó el precio de ${priceFormatted}. Procede con el pedido.`,
+          { type: 'price_accepted', requestId: id }
+        ).catch(() => {});
+      }
     }
-    
+
     if (event_type === 'price_rejected') {
       await db.query(
         `UPDATE requests SET status = 'pending', total_price = NULL WHERE id = $1`,
         [id]
       );
+      // Notificar al proveedor que el cliente rechazó
+      const providerFcm = await db.query('SELECT fcm_token FROM users WHERE id = $1', [request.provider_id]);
+      if (providerFcm.rows[0]?.fcm_token) {
+        const customerName = req.user.name;
+        FirebaseService.sendNotification(
+          providerFcm.rows[0].fcm_token,
+          '❌ Precio rechazado',
+          `${customerName} rechazó el precio. Puedes proponer uno nuevo.`,
+          { type: 'price_rejected', requestId: id }
+        ).catch(() => {});
+      }
     }
-    
+
     res.status(201).json({
       success: true,
       message: 'Evento registrado',

@@ -1,5 +1,4 @@
 const db = require('../../config/database');
-const FirebaseService = require('../../services/firebaseService');
 // Provider acepta un pedido
 const acceptRequest = async (req, res) => {
   const { requestId } = req.params;
@@ -88,40 +87,11 @@ const acceptRequest = async (req, res) => {
     );
     
     await client.query('COMMIT');
-    
-    // Obtener información del cliente para notificación
-    const customerResult = await db.query(
-      'SELECT fcm_token, name FROM users WHERE id = $1',
-      [request.customer_id]
-    );
-    const customerFcmToken = customerResult.rows[0]?.fcm_token;
-    const customerName = customerResult.rows[0]?.name;
-    
-    // Enviar notificación push al cliente
-    if (customerFcmToken) {
-      await FirebaseService.sendNotification(
-        customerFcmToken,
-        '✅ Pedido aceptado',
-        `${providerName} ha aceptado tu pedido y estará en camino pronto`,
-        {
-          requestId: requestId,
-          type: 'request_accepted',
-          providerName: providerName,
-          providerId: providerId
-        }
-      );
-    }
-    
-    // Crear notificación en base de datos para el cliente
-    await db.query(
-      `INSERT INTO notifications (user_id, title, body, type, request_id, created_at)
-       VALUES ($1, 'Pedido aceptado', $2, 'request_accepted', $3, NOW())`,
-      [request.customer_id, `${providerName} ha aceptado tu pedido`, requestId]
-    );
-    
-    res.json({ 
-      success: true, 
-      message: 'Request accepted successfully' 
+
+    // No notificamos al cliente aquí — se notificará cuando el proveedor asigne el precio
+    res.json({
+      success: true,
+      message: 'Request accepted successfully'
     });
   } catch (error) {
     await client.query('ROLLBACK');
