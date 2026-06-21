@@ -100,26 +100,71 @@ const lsWebhook = async (req, res) => {
   }
 
   try {
+    const attrs = data?.attributes || {};
+    const txId = `ls_${eventName}_${data?.id || Date.now()}`;
+
     switch (eventName) {
+
+      // ── Activar ────────────────────────────────────────────────────────────
       case 'subscription_created':
-      case 'subscription_renewed':
-      case 'subscription_resumed': {
-        const attrs = data?.attributes || {};
+      case 'subscription_resumed':
+      case 'subscription_unpaused': {
         const expiresAt = attrs.renews_at || null;
-        const txId = `ls_sub_${data?.id || Date.now()}`;
         await _activateSubscription(userId, { transactionId: txId, expiresAt });
-        console.log(`[LS webhook] Activada userId=${userId} hasta ${expiresAt}`);
+        console.log(`[LS] Activada (${eventName}) userId=${userId} hasta ${expiresAt}`);
         break;
       }
 
+      // Renovación mensual exitosa — actualiza la fecha de expiración
+      case 'subscription_payment_success': {
+        const expiresAt = attrs.renews_at || null;
+        await _activateSubscription(userId, { transactionId: txId, expiresAt });
+        console.log(`[LS] Renovada userId=${userId} hasta ${expiresAt}`);
+        break;
+      }
+
+      // Pago fallido recuperado — reactivar
+      case 'subscription_payment_recovered': {
+        const expiresAt = attrs.renews_at || null;
+        await _activateSubscription(userId, { transactionId: txId, expiresAt });
+        console.log(`[LS] Pago recuperado userId=${userId}`);
+        break;
+      }
+
+      // ── Advertencia — sigue activa hasta el fin del período ────────────────
+      case 'subscription_cancelled': {
+        // No desactivamos aún — LS sigue activa hasta que venza
+        // La desactivación real llega con subscription_expired
+        console.log(`[LS] Cancelada (seguirá activa hasta ${attrs.ends_at}) userId=${userId}`);
+        break;
+      }
+
+      case 'subscription_paused': {
+        console.log(`[LS] Pausada userId=${userId}`);
+        break;
+      }
+
+      case 'subscription_payment_failed': {
+        // LS reintentará el cobro — no desactivamos aún
+        console.log(`[LS] Pago fallido userId=${userId} — LS reintentará`);
+        break;
+      }
+
+      // ── Desactivar ─────────────────────────────────────────────────────────
       case 'subscription_expired': {
         await _deactivateSubscription(userId);
-        console.log(`[LS webhook] Desactivada userId=${userId}`);
+        console.log(`[LS] Expirada → desactivada userId=${userId}`);
+        break;
+      }
+
+      case 'order_refunded': {
+        await _deactivateSubscription(userId);
+        console.log(`[LS] Reembolso → desactivada userId=${userId}`);
         break;
       }
 
       default:
-        console.log(`[LS webhook] Evento ignorado: ${eventName}`);
+        console.log(`[LS] Evento ignorado: ${eventName}`);
     }
   } catch (error) {
     console.error('[LS webhook] Error:', error);
