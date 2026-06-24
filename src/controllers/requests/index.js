@@ -1,5 +1,6 @@
 const createRequest = require('./createRequest');
 const getCustomerRequests = require('./getCustomerRequests');
+const getCustomerHistory = require('./getCustomerHistory');
 const cancelRequest = require('./cancelRequest');
 const getPendingRequests = require('./getPendingRequests');
 const acceptRequest = require('./acceptRequest');
@@ -12,6 +13,7 @@ const repeatRequest = require('./repeatRequest');
 module.exports = {
   createRequest,
   getCustomerRequests,
+  getCustomerHistory,
   cancelRequest,
   getPendingRequests,
   acceptRequest,

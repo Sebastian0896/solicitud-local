@@ -67,4 +67,48 @@ const submitRating = async (req, res) => {
   }
 };
 
-module.exports = { submitRating };
+const getProviderRatings = async (req, res) => {
+  const { providerId } = req.params;
+  const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+  const offset = parseInt(req.query.offset) || 0;
+
+  try {
+    const ratingsResult = await db.query(
+      `SELECT
+         rt.id,
+         rt.rating,
+         rt.comment,
+         rt.created_at,
+         u.name AS customer_name
+       FROM ratings rt
+       LEFT JOIN users u ON rt.customer_id = u.id
+       WHERE rt.provider_id = $1
+       ORDER BY rt.created_at DESC
+       LIMIT $2 OFFSET $3`,
+      [providerId, limit, offset]
+    );
+
+    const summaryResult = await db.query(
+      `SELECT
+         ROUND(AVG(rating)::numeric, 1) AS average,
+         COUNT(*) AS total
+       FROM ratings
+       WHERE provider_id = $1`,
+      [providerId]
+    );
+
+    const summary = summaryResult.rows[0];
+    res.json({
+      average: summary.average ? parseFloat(summary.average) : null,
+      total: parseInt(summary.total),
+      ratings: ratingsResult.rows,
+      limit,
+      offset,
+    });
+  } catch (error) {
+    console.error('getProviderRatings error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+module.exports = { submitRating, getProviderRatings };

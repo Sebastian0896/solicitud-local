@@ -1,10 +1,11 @@
 // src/routes/requestRoutes.js
 const express = require('express');
-const { 
-  createRequest, 
-  getPendingRequests, 
+const {
+  createRequest,
+  getPendingRequests,
   acceptRequest,
   getCustomerRequests,
+  getCustomerHistory,
   getProviderAssignedRequests,
   updateRequestStatus,
   cancelRequest,
@@ -18,6 +19,7 @@ const router = express.Router();
 // Rutas de cliente
 router.post('/', authenticate, requireCustomer, createRequest);
 router.get('/customer', authenticate, requireCustomer, getCustomerRequests);
+router.get('/customer/history', authenticate, requireCustomer, getCustomerHistory);
 router.delete('/:requestId/cancel', authenticate, requireCustomer, cancelRequest);
 
 // Rutas de proveedor
