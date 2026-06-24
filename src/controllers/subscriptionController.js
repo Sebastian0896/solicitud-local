@@ -266,10 +266,45 @@ const checkSubscription = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/subscriptions/open
+ * Redirige a quikoya://subscription (deep link para el email de LS).
+ * LS solo acepta https://, así que la URL del email apunta aquí.
+ */
+const openDeepLink = (_req, res) => {
+  res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Abriendo QuikoYA...</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 60px 24px;
+           background: #f0fdf4; color: #166534; }
+    h2 { font-size: 20px; margin-bottom: 8px; }
+    p  { color: #4b5563; font-size: 14px; }
+  </style>
+  <script>
+    window.location = 'quikoya://subscription';
+    setTimeout(function() {
+      document.getElementById('msg').style.display = 'block';
+    }, 1500);
+  </script>
+</head>
+<body>
+  <h2>Abriendo QuikoYA Pro...</h2>
+  <div id="msg" style="display:none">
+    <p>Si la app no abre automáticamente, ábrela manualmente y ve a <strong>Ajustes → Suscripción</strong>.</p>
+  </div>
+</body>
+</html>`);
+};
+
 module.exports = {
   createCheckoutSession,
   lsWebhook,
   lsReturn,
+  openDeepLink,
   getManagement,
   activateSubscription,
   checkSubscription,

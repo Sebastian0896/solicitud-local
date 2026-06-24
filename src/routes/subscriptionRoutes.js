@@ -3,6 +3,7 @@ const {
   createCheckoutSession,
   lsWebhook,
   lsReturn,
+  openDeepLink,
   getManagement,
   activateSubscription,
   checkSubscription,
@@ -20,6 +21,9 @@ router.post('/ls/webhook', lsWebhook);
 
 // URL de retorno — LS redirige aquí; el WebView de Flutter la intercepta
 router.get('/ls/return', lsReturn);
+
+// Deep link redirect — para el botón del email de recibo de LS
+router.get('/open', openDeepLink);
 
 // ── Rutas comunes ─────────────────────────────────────────────────────────────
 router.get('/manage', authenticate, requireProvider, getManagement);
