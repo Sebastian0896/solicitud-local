@@ -94,6 +94,26 @@ const verifyWebhookSignature = (rawBody, sigHeader) => {
   }
 };
 
+/**
+ * Cancels a Lemon Squeezy subscription at period end.
+ * @param {string} lsSubscriptionId
+ */
+const cancelSubscription = (lsSubscriptionId) =>
+  _lsRequest('DELETE', `/v1/subscriptions/${lsSubscriptionId}`);
+
+/**
+ * Resumes a cancelled subscription (before it expires).
+ * @param {string} lsSubscriptionId
+ */
+const resumeSubscription = (lsSubscriptionId) =>
+  _lsRequest('PATCH', `/v1/subscriptions/${lsSubscriptionId}`, {
+    data: {
+      type: 'subscriptions',
+      id: String(lsSubscriptionId),
+      attributes: { cancelled: false },
+    },
+  });
+
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 const _lsPost = (path, payload) =>
@@ -141,4 +161,4 @@ const _lsRequest = (method, path, payload) =>
     req.end();
   });
 
-module.exports = { createCheckout, verifyWebhookSignature };
+module.exports = { createCheckout, verifyWebhookSignature, cancelSubscription, resumeSubscription };

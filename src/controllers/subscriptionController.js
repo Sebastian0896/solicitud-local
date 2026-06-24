@@ -1,5 +1,5 @@
 const db = require('../config/database');
-const { createCheckout, verifyWebhookSignature } = require('../services/lemonSqueezyService');
+const { createCheckout, verifyWebhookSignature, cancelSubscription, resumeSubscription } = require('../services/lemonSqueezyService');
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -267,6 +267,56 @@ const checkSubscription = async (req, res) => {
 };
 
 /**
+ * POST /api/subscriptions/cancel
+ * Cancela la suscripción del proveedor al final del período (no de inmediato).
+ */
+const cancelSubscriptionHandler = async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const { rows } = await db.query(
+      `SELECT ls_subscription_id FROM users WHERE id = $1 AND role = 'provider'`,
+      [userId]
+    );
+    const lsSubId = rows[0]?.ls_subscription_id;
+    if (!lsSubId) {
+      return res.status(400).json({ error: 'No hay suscripción activa para cancelar.' });
+    }
+
+    await cancelSubscription(lsSubId);
+
+    res.json({ success: true, message: 'Suscripción cancelada. Permanece activa hasta el fin del período.' });
+  } catch (error) {
+    console.error('[cancel] Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * POST /api/subscriptions/resume
+ * Reactiva una suscripción cancelada (antes de que expire).
+ */
+const resumeSubscriptionHandler = async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const { rows } = await db.query(
+      `SELECT ls_subscription_id FROM users WHERE id = $1 AND role = 'provider'`,
+      [userId]
+    );
+    const lsSubId = rows[0]?.ls_subscription_id;
+    if (!lsSubId) {
+      return res.status(400).json({ error: 'No hay suscripción para reactivar.' });
+    }
+
+    await resumeSubscription(lsSubId);
+
+    res.json({ success: true, message: 'Suscripción reactivada.' });
+  } catch (error) {
+    console.error('[resume] Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
  * GET /api/subscriptions/open
  * Redirige a quikoya://subscription (deep link para el email de LS).
  * LS solo acepta https://, así que la URL del email apunta aquí.
@@ -305,6 +355,8 @@ module.exports = {
   lsWebhook,
   lsReturn,
   openDeepLink,
+  cancelSubscriptionHandler,
+  resumeSubscriptionHandler,
   getManagement,
   activateSubscription,
   checkSubscription,

@@ -4,6 +4,8 @@ const {
   lsWebhook,
   lsReturn,
   openDeepLink,
+  cancelSubscriptionHandler,
+  resumeSubscriptionHandler,
   getManagement,
   activateSubscription,
   checkSubscription,
@@ -27,6 +29,8 @@ router.get('/open', openDeepLink);
 
 // ── Rutas comunes ─────────────────────────────────────────────────────────────
 router.get('/manage', authenticate, requireProvider, getManagement);
+router.post('/cancel', authenticate, requireProvider, cancelSubscriptionHandler);
+router.post('/resume', authenticate, requireProvider, resumeSubscriptionHandler);
 router.post('/activate', authenticate, requireProvider, activateSubscription);
 router.get('/status', authenticate, requireProvider, checkSubscription);
 
