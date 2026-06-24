@@ -92,7 +92,14 @@ const lsWebhook = async (req, res) => {
   try {
     const attrs = data?.attributes || {};
     const txId = `ls_${eventName}_${data?.id || Date.now()}`;
-    const lsSubId = data?.id ? String(data.id) : null;
+
+    // data.type = "subscriptions"       → data.id ES el subscription ID
+    // data.type = "subscription-invoices" → data.id es el invoice ID;
+    //             el subscription ID real está en attrs.subscription_id
+    const isInvoiceEvent = data?.type === 'subscription-invoices';
+    const lsSubId = isInvoiceEvent
+      ? (attrs.subscription_id ? String(attrs.subscription_id) : null)
+      : (data?.id ? String(data.id) : null);
     const portalUrl = attrs.urls?.customer_portal || null;
 
     switch (eventName) {
@@ -106,7 +113,7 @@ const lsWebhook = async (req, res) => {
           lsSubId,
           portalUrl,
         });
-        console.log(`[LS] Activada (${eventName}) userId=${userId} hasta ${attrs.renews_at}`);
+        console.log(`[LS] Activada (${eventName}) userId=${userId} subId=${lsSubId} hasta ${attrs.renews_at}`);
         break;
       }
 
@@ -116,9 +123,9 @@ const lsWebhook = async (req, res) => {
           transactionId: txId,
           expiresAt: attrs.renews_at || null,
           lsSubId,
-          portalUrl,
+          portalUrl: null, // portal URL no viene en eventos de pago
         });
-        console.log(`[LS] Renovada/recuperada userId=${userId} hasta ${attrs.renews_at}`);
+        console.log(`[LS] Renovada/recuperada userId=${userId} subId=${lsSubId} hasta ${attrs.renews_at}`);
         break;
       }
 
