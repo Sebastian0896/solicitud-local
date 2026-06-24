@@ -183,11 +183,56 @@ const saveFcmToken = async (req, res) => {
   }
 };
 
+const getProviderPublicProfile = async (req, res) => {
+  const { providerId } = req.params;
+  try {
+    const result = await db.query(
+      `SELECT
+         u.id,
+         u.name,
+         u.business_name,
+         u.rating,
+         u.rating_count,
+         u.available,
+         COALESCE(
+           JSON_AGG(c.name ORDER BY c.name) FILTER (WHERE c.name IS NOT NULL),
+           '[]'
+         ) AS categories
+       FROM users u
+       LEFT JOIN provider_categories pc ON pc.provider_id = u.id
+       LEFT JOIN categories c ON c.id = pc.category_id
+       WHERE u.id = $1 AND u.role = 'provider' AND u.is_active = true
+       GROUP BY u.id`,
+      [providerId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Proveedor no encontrado.' });
+    }
+
+    const provider = result.rows[0];
+    const stats = await db.query(
+      `SELECT COUNT(*) AS completed
+       FROM requests
+       WHERE provider_id = $1 AND status = 'delivered' AND is_deleted = false`,
+      [providerId]
+    );
+
+    res.json({
+      ...provider,
+      completed_requests: parseInt(stats.rows[0]?.completed ?? 0),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 module.exports = {
   toggleAvailability,
   updateProfile,
   updateLocation,
   getProviderStats,
   getProfile,
-  saveFcmToken
+  saveFcmToken,
+  getProviderPublicProfile,
 };

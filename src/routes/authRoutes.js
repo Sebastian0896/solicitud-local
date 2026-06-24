@@ -10,6 +10,9 @@ const {
   revokeAllUserTokens,
   verifyEmail,
   resendVerification,
+  forgotPassword,
+  resetPasswordPage,
+  resetPassword,
 } = require('../controllers/authController');
 
 router.post('/register', register);
@@ -19,5 +22,8 @@ router.post('/logout', authenticate, logout);
 router.post('/revoke-all', authenticate, revokeAllUserTokens);
 router.post('/verify-email', verifyEmail);
 router.post('/resend-verification', resendVerification);
+router.post('/forgot-password', forgotPassword);
+router.get('/reset-page', resetPasswordPage);
+router.post('/reset-password', resetPassword);
 
 module.exports = router;

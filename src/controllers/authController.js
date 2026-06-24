@@ -4,7 +4,8 @@ const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const db = require('../config/database');
 const logger = require('../utils/logger');
-const { sendVerificationEmail } = require('../utils/mailer');
+const crypto = require('crypto');
+const { sendVerificationEmail, sendPasswordResetEmail } = require('../utils/mailer');
 
 // Generar access token (corto plazo)
 const generateAccessToken = (user) => {
@@ -339,6 +340,156 @@ const resendVerification = async (req, res) => {
   }
 };
 
+const BACKEND_URL = process.env.BACKEND_URL || 'https://solicitud-local.onrender.com';
+
+const forgotPassword = async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email requerido.' });
+
+  try {
+    const result = await db.query(
+      `SELECT id, name FROM users WHERE email = $1 AND is_active = true`,
+      [email.toLowerCase().trim()]
+    );
+
+    // Responder siempre igual para no revelar si el email existe
+    if (result.rows.length === 0) {
+      return res.json({ success: true });
+    }
+
+    const user = result.rows[0];
+    const token = crypto.randomBytes(32).toString('hex');
+    const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
+
+    await db.query(
+      `UPDATE users SET reset_token = $1, reset_token_expires_at = $2 WHERE id = $3`,
+      [token, expires, user.id]
+    );
+
+    const resetUrl = `${BACKEND_URL}/api/auth/reset-page?token=${token}`;
+    sendPasswordResetEmail(email, user.name, resetUrl).catch((err) =>
+      logger.error('Error enviando email de reset', { email, error: err.message })
+    );
+
+    logger.info('Reset de contraseña solicitado', { userId: user.id, email });
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('forgotPassword error', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+};
+
+const resetPasswordPage = (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(400).send('<p>Enlace inválido.</p>');
+
+  res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Restablecer contraseña — QuikoYA</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: sans-serif; background: #f0fdf4; display: flex;
+           align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+    .card { background: #fff; border-radius: 16px; padding: 32px 28px;
+            max-width: 400px; width: 100%; box-shadow: 0 4px 24px rgba(0,0,0,.08); }
+    h2 { color: #10B981; margin: 0 0 8px; font-size: 22px; }
+    p  { color: #6b7280; font-size: 14px; margin: 0 0 24px; }
+    input { width: 100%; padding: 12px 14px; border: 1.5px solid #e2e8f0;
+            border-radius: 10px; font-size: 15px; outline: none; margin-bottom: 14px; }
+    input:focus { border-color: #10B981; }
+    button { width: 100%; padding: 13px; background: #10B981; color: #fff;
+             border: none; border-radius: 10px; font-size: 16px;
+             font-weight: 700; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: default; }
+    .msg { text-align: center; margin-top: 16px; font-size: 14px; }
+    .err { color: #ef4444; } .ok { color: #10B981; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h2>Nueva contraseña</h2>
+  <p>Ingresa tu nueva contraseña para la cuenta de QuikoYA.</p>
+  <input type="password" id="pw" placeholder="Nueva contraseña" minlength="6">
+  <input type="password" id="pw2" placeholder="Confirmar contraseña">
+  <button id="btn" onclick="submit()">Restablecer</button>
+  <div class="msg" id="msg"></div>
+</div>
+<script>
+async function submit() {
+  const pw = document.getElementById('pw').value;
+  const pw2 = document.getElementById('pw2').value;
+  const msg = document.getElementById('msg');
+  const btn = document.getElementById('btn');
+  msg.textContent = '';
+  if (pw.length < 6) { msg.className='msg err'; msg.textContent='Mínimo 6 caracteres.'; return; }
+  if (pw !== pw2)    { msg.className='msg err'; msg.textContent='Las contraseñas no coinciden.'; return; }
+  btn.disabled = true; btn.textContent = 'Guardando...';
+  try {
+    const r = await fetch('/api/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: '${token}', password: pw }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Error al restablecer.');
+    msg.className='msg ok';
+    msg.textContent='¡Contraseña actualizada! Ya puedes iniciar sesión en la app.';
+    btn.style.display='none';
+  } catch(e) {
+    msg.className='msg err'; msg.textContent=e.message;
+    btn.disabled=false; btn.textContent='Restablecer';
+  }
+}
+</script>
+</body>
+</html>`);
+};
+
+const resetPassword = async (req, res) => {
+  const { token, password } = req.body;
+  if (!token || !password) {
+    return res.status(400).json({ error: 'Token y contraseña requeridos.' });
+  }
+  if (password.length < 6) {
+    return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres.' });
+  }
+
+  try {
+    const result = await db.query(
+      `SELECT id FROM users
+       WHERE reset_token = $1
+         AND reset_token_expires_at > NOW()
+         AND is_active = true`,
+      [token]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'El enlace expiró o es inválido. Solicita uno nuevo.' });
+    }
+
+    const userId = result.rows[0].id;
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    await db.query(
+      `UPDATE users SET password_hash = $1, reset_token = NULL, reset_token_expires_at = NULL
+       WHERE id = $2`,
+      [passwordHash, userId]
+    );
+
+    // Revocar todas las sesiones activas por seguridad
+    await db.query(`UPDATE refresh_tokens SET revoked = true WHERE user_id = $1`, [userId]);
+
+    logger.info('Contraseña restablecida', { userId });
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('resetPassword error', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+};
+
 const revokeAllUserTokens = async (req, res) => {
   const userId = req.user.userId;
   
@@ -364,4 +515,7 @@ module.exports = {
   revokeAllUserTokens,
   verifyEmail,
   resendVerification,
+  forgotPassword,
+  resetPasswordPage,
+  resetPassword,
 };

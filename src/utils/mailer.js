@@ -44,4 +44,44 @@ const sendVerificationEmail = async (email, name, code) => {
   }
 };
 
-module.exports = { sendVerificationEmail };
+const sendPasswordResetEmail = async (email, name, resetUrl) => {
+  const apiKey = process.env.BREVO_API_KEY;
+  const fromEmail = process.env.SMTP_FROM || 'noreply@quikoya.com';
+
+  if (!apiKey) {
+    logger.warn('BREVO_API_KEY no configurada — no se envió email de reset', { email });
+    return;
+  }
+
+  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: { 'api-key': apiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sender: { name: 'QuikoYA', email: fromEmail },
+      to: [{ email }],
+      subject: 'Recupera tu contraseña — QuikoYA',
+      htmlContent: `
+        <div style="font-family:sans-serif;max-width:480px;margin:auto;">
+          <h2 style="color:#10B981;">Hola ${name},</h2>
+          <p>Recibimos una solicitud para restablecer tu contraseña de <strong>QuikoYA</strong>.</p>
+          <div style="text-align:center;margin:32px 0;">
+            <a href="${resetUrl}"
+               style="background:#10B981;color:#fff;padding:14px 32px;border-radius:8px;
+                      text-decoration:none;font-weight:700;font-size:16px;">
+              Restablecer contraseña
+            </a>
+          </div>
+          <p style="color:#6b7280;font-size:14px;">Este enlace expira en <strong>1 hora</strong>.</p>
+          <p style="color:#6b7280;font-size:12px;">Si no solicitaste esto, ignora este mensaje. Tu contraseña no cambiará.</p>
+        </div>
+      `,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Brevo API error ${response.status}: ${body}`);
+  }
+};
+
+module.exports = { sendVerificationEmail, sendPasswordResetEmail };
