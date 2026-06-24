@@ -1,5 +1,5 @@
 const db = require('../config/database');
-const { createCheckout, verifyWebhookSignature, cancelSubscription, resumeSubscription } = require('../services/lemonSqueezyService');
+const { createCheckout, verifyWebhookSignature, getSubscription, cancelSubscription, resumeSubscription } = require('../services/lemonSqueezyService');
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -187,7 +187,7 @@ const getManagement = async (req, res) => {
   try {
     const userResult = await db.query(
       `SELECT subscription_active, subscription_expires_at,
-              ls_customer_portal_url,
+              ls_subscription_id,
               CASE
                 WHEN subscription_expires_at < NOW() THEN 'expired'
                 WHEN subscription_active = true       THEN 'active'
@@ -196,6 +196,19 @@ const getManagement = async (req, res) => {
        FROM users WHERE id = $1`,
       [userId]
     );
+
+    const userRow = userResult.rows[0];
+
+    // Consultar estado real en LS para saber si está cancelada (sin migración extra)
+    let lsCancelled = false;
+    if (userRow?.ls_subscription_id && userRow.subscription_active) {
+      try {
+        const lsSub = await getSubscription(userRow.ls_subscription_id);
+        lsCancelled = lsSub?.data?.attributes?.cancelled === true;
+      } catch (_) {
+        // Si falla la consulta a LS, lo ignoramos — no bloqueamos la carga
+      }
+    }
 
     const paymentsResult = await db.query(
       `SELECT transaction_id, amount, currency, status, created_at
@@ -207,7 +220,8 @@ const getManagement = async (req, res) => {
     );
 
     res.json({
-      ...userResult.rows[0],
+      ...userRow,
+      ls_cancelled: lsCancelled,
       payments: paymentsResult.rows,
     });
   } catch (error) {
