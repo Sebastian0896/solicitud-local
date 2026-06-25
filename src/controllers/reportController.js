@@ -12,20 +12,11 @@ const submitReport = async (req, res) => {
     return res.status(400).json({ error: 'No puedes reportarte a ti mismo.' });
   }
 
-  const { error } = await db
-    .from('reports')
-    .insert({
-      reporter_id: reporterId,
-      reported_user_id,
-      request_id: request_id || null,
-      reason,
-      description: description || null,
-    });
-
-  if (error) {
-    console.error('[submitReport] Error:', error);
-    return res.status(500).json({ error: 'No se pudo enviar el reporte.' });
-  }
+  await db.query(
+    `INSERT INTO reports (reporter_id, reported_user_id, request_id, reason, description)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [reporterId, reported_user_id, request_id || null, reason, description || null]
+  );
 
   res.status(201).json({ message: 'Reporte enviado correctamente.' });
 };

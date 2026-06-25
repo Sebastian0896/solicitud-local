@@ -290,19 +290,25 @@ const getReports = async (req, res) => {
     const limit = parseInt(req.query.limit) || 50;
     const offset = parseInt(req.query.offset) || 0;
 
-    const { data, error } = await db
-      .from('reports')
-      .select(`
-        id, reason, description, created_at,
-        reporter:reporter_id ( id, name, email ),
-        reported:reported_user_id ( id, name, email, role ),
-        request:request_id ( id, request_text )
-      `)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
+    const result = await db.query(
+      `SELECT
+        r.id, r.reason, r.description, r.created_at,
+        json_build_object('id', rep.id, 'name', rep.name, 'email', rep.email) AS reporter,
+        json_build_object('id', rep2.id, 'name', rep2.name, 'email', rep2.email, 'role', rep2.role) AS reported,
+        CASE WHEN r.request_id IS NOT NULL
+          THEN json_build_object('id', req.id, 'request_text', req.request_text)
+          ELSE NULL
+        END AS request
+       FROM reports r
+       JOIN users rep  ON rep.id  = r.reporter_id
+       JOIN users rep2 ON rep2.id = r.reported_user_id
+       LEFT JOIN requests req ON req.id = r.request_id
+       ORDER BY r.created_at DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
 
-    if (error) throw new Error(error.message);
-    res.json(data || []);
+    res.json(result.rows);
   } catch (error) {
     console.error('Get reports error:', error);
     res.status(500).json({ error: error.message });
