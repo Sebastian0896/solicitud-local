@@ -17,6 +17,8 @@ const chatRoutes = require('./routes/chatRoutes');
 const ratingRoutes = require('./routes/ratingRoutes');
 const dispatchRoutes = require('./routes/dispatchRoutes');
 const suggestionRoutes = require('./routes/suggestionRoutes');
+const configRoutes = require('./routes/configRoutes');
+const reportRoutes = require('./routes/reportRoutes');
 
 const { 
   generalLimiter, 
@@ -73,6 +75,8 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/ratings', ratingRoutes);
 app.use('/api/dispatch', dispatchRoutes);
 app.use('/api/suggestions', suggestionRoutes);
+app.use('/api/config', configRoutes);
+app.use('/api/reports', reportRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {
