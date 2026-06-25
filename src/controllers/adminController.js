@@ -285,6 +285,30 @@ const getOrdersReport = async (req, res) => {
   }
 };
 
+const getReports = async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = parseInt(req.query.offset) || 0;
+
+    const { data, error } = await db
+      .from('reports')
+      .select(`
+        id, reason, description, created_at,
+        reporter:reporter_id ( id, name, email ),
+        reported:reported_user_id ( id, name, email, role ),
+        request:request_id ( id, request_text )
+      `)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) throw new Error(error.message);
+    res.json(data || []);
+  } catch (error) {
+    console.error('Get reports error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
 module.exports = {
   getStats,
   getUsers,
@@ -293,4 +317,5 @@ module.exports = {
   cancelRequest,
   getSubscriptions,
   getOrdersReport,
+  getReports,
 };

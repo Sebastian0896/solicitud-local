@@ -1,5 +1,5 @@
 const express = require('express');
-const { 
+const {
   getStats,
   getUsers,
   toggleUserStatus,
@@ -7,6 +7,7 @@ const {
   cancelRequest,
   getSubscriptions,
   getOrdersReport,
+  getReports,
 } = require('../controllers/adminController');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 
@@ -30,5 +31,8 @@ router.delete('/requests/:requestId', cancelRequest);
 
 // Suscripciones
 router.get('/subscriptions', getSubscriptions);
+
+// Reportes de usuarios
+router.get('/user-reports', getReports);
 
 module.exports = router;
