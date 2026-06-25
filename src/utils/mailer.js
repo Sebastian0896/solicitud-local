@@ -24,6 +24,8 @@ const sendVerificationEmail = async (email, name, code) => {
       sender: { name: 'QuikoYA', email: fromEmail },
       to: [{ email }],
       subject: 'Verifica tu cuenta en QuikoYA',
+      trackClicks: false,
+      trackOpens: false,
       htmlContent: `
         <div style="font-family:sans-serif;max-width:480px;margin:auto;">
           <h2 style="color:#10B981;">Hola ${name},</h2>
@@ -60,6 +62,8 @@ const sendPasswordResetEmail = async (email, name, resetUrl) => {
       sender: { name: 'QuikoYA', email: fromEmail },
       to: [{ email }],
       subject: 'Recupera tu contraseña — QuikoYA',
+      trackClicks: false,
+      trackOpens: false,
       htmlContent: `
         <div style="font-family:sans-serif;max-width:480px;margin:auto;">
           <h2 style="color:#10B981;">Hola ${name},</h2>
