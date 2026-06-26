@@ -10,7 +10,8 @@ const {
   updateRequestStatus,
   cancelRequest,
   deleteRequest,
-  repeatRequest
+  repeatRequest,
+  getProviderHistory,
 } = require('../controllers/requests');
 const { authenticate, requireCustomer, requireProvider } = require('../middleware/auth');
 
@@ -23,6 +24,7 @@ router.get('/customer/history', authenticate, requireCustomer, getCustomerHistor
 router.delete('/:requestId/cancel', authenticate, requireCustomer, cancelRequest);
 
 // Rutas de proveedor
+router.get('/provider/history', authenticate, requireProvider, getProviderHistory);
 router.get('/pending', authenticate, requireProvider, getPendingRequests);
 router.post('/:requestId/accept', authenticate, requireProvider, acceptRequest);
 router.get('/provider/assigned', authenticate, requireProvider, getProviderAssignedRequests);
