@@ -1,7 +1,6 @@
 const db = require('../../config/database');
 
 const updateProviderLocation = async (req, res) => {
-  const providerId = req.user.id;
   const { requestId } = req.params;
   const { lat, lng } = req.body;
 
@@ -13,9 +12,9 @@ const updateProviderLocation = async (req, res) => {
     const result = await db.query(
       `UPDATE requests
        SET provider_lat = $1, provider_lng = $2, provider_location_updated_at = NOW()
-       WHERE id = $3 AND provider_id = $4 AND status = 'on_the_way'
+       WHERE id = $3 AND status = 'on_the_way'
        RETURNING id`,
-      [lat, lng, requestId, providerId]
+      [lat, lng, requestId]
     );
     if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Pedido no encontrado o no está en camino' });

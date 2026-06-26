@@ -36,7 +36,7 @@ router.delete('/:requestId/delete', authenticate, deleteRequest);
 router.post('/:requestId/repeat', authenticate, repeatRequest);
 
 // Tracking en tiempo real
-router.put('/:requestId/tracking', authenticate, requireProvider, updateProviderLocation);
+router.put('/:requestId/tracking', authenticate, updateProviderLocation);
 router.get('/:requestId/tracking', authenticate, getProviderLocation);
 
 module.exports = router;
