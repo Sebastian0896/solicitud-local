@@ -13,6 +13,7 @@ const {
   repeatRequest,
   getProviderHistory,
 } = require('../controllers/requests');
+const { updateProviderLocation, getProviderLocation } = require('../controllers/requests/trackingController');
 const { authenticate, requireCustomer, requireProvider } = require('../middleware/auth');
 
 const router = express.Router();
@@ -31,8 +32,11 @@ router.get('/provider/assigned', authenticate, requireProvider, getProviderAssig
 router.put('/:requestId/status', authenticate, requireProvider, updateRequestStatus);
 
 //Ruta delete request o repeat request
-// routes/requestRoutes.js
 router.delete('/:requestId/delete', authenticate, deleteRequest);
 router.post('/:requestId/repeat', authenticate, repeatRequest);
+
+// Tracking en tiempo real
+router.put('/:requestId/tracking', authenticate, requireProvider, updateProviderLocation);
+router.get('/:requestId/tracking', authenticate, getProviderLocation);
 
 module.exports = router;

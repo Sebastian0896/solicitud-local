@@ -111,4 +111,60 @@ const getProviderRatings = async (req, res) => {
   }
 };
 
-module.exports = { submitRating, getProviderRatings };
+const submitProviderRating = async (req, res) => {
+  const { requestId, rating, comment } = req.body;
+  const providerId = req.user.id;
+
+  if (!requestId || !rating) {
+    return res.status(400).json({ error: 'requestId y rating son requeridos' });
+  }
+  const ratingNum = parseInt(rating, 10);
+  if (isNaN(ratingNum) || ratingNum < 1 || ratingNum > 5) {
+    return res.status(400).json({ error: 'El rating debe ser entre 1 y 5' });
+  }
+
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+
+    const reqResult = await client.query(
+      `SELECT r.id, r.customer_id, r.status,
+              EXISTS(SELECT 1 FROM ratings WHERE request_id = r.id AND rated_by = 'provider') AS already_rated
+       FROM requests r
+       WHERE r.id = $1 AND r.provider_id = $2`,
+      [requestId, providerId]
+    );
+
+    if (reqResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Pedido no encontrado' });
+    }
+
+    const request = reqResult.rows[0];
+    if (request.status !== 'delivered') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Solo puedes calificar pedidos entregados' });
+    }
+    if (request.already_rated) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Ya calificaste a este cliente' });
+    }
+
+    await client.query(
+      `INSERT INTO ratings (provider_id, customer_id, request_id, rating, comment, rated_by, created_at)
+       VALUES ($1, $2, $3, $4, $5, 'provider', NOW())`,
+      [providerId, request.customer_id, requestId, ratingNum, comment || null]
+    );
+
+    await client.query('COMMIT');
+    res.json({ success: true });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Provider rating error:', error.message);
+    res.status(500).json({ error: error.message });
+  } finally {
+    client.release();
+  }
+};
+
+module.exports = { submitRating, getProviderRatings, submitProviderRating };

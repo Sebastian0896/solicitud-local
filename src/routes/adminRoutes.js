@@ -8,6 +8,7 @@ const {
   getSubscriptions,
   getOrdersReport,
   getReports,
+  resolveReport,
 } = require('../controllers/adminController');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 
@@ -34,5 +35,6 @@ router.get('/subscriptions', getSubscriptions);
 
 // Reportes de usuarios
 router.get('/user-reports', getReports);
+router.put('/user-reports/:reportId/resolve', resolveReport);
 
 module.exports = router;

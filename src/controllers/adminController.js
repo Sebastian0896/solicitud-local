@@ -287,12 +287,13 @@ const getOrdersReport = async (req, res) => {
 
 const getReports = async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 50;
+    const limit = parseInt(req.query.limit) || 20;
     const offset = parseInt(req.query.offset) || 0;
+    const status = req.query.status || 'pending';
 
     const result = await db.query(
       `SELECT
-        r.id, r.reason, r.description, r.created_at,
+        r.id, r.reason, r.description, r.created_at, r.status,
         json_build_object('id', rep.id, 'name', rep.name, 'email', rep.email) AS reporter,
         json_build_object('id', rep2.id, 'name', rep2.name, 'email', rep2.email, 'role', rep2.role) AS reported,
         CASE WHEN r.request_id IS NOT NULL
@@ -303,14 +304,30 @@ const getReports = async (req, res) => {
        JOIN users rep  ON rep.id  = r.reporter_id
        JOIN users rep2 ON rep2.id = r.reported_user_id
        LEFT JOIN requests req ON req.id = r.request_id
+       WHERE r.status = $3
        ORDER BY r.created_at DESC
        LIMIT $1 OFFSET $2`,
-      [limit, offset]
+      [limit, offset, status]
     );
 
     res.json(result.rows);
   } catch (error) {
     console.error('Get reports error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+const resolveReport = async (req, res) => {
+  const { reportId } = req.params;
+  try {
+    const result = await db.query(
+      `UPDATE reports SET status = 'resolved' WHERE id = $1 RETURNING id`,
+      [reportId]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Reporte no encontrado' });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Resolve report error:', error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -324,4 +341,5 @@ module.exports = {
   getSubscriptions,
   getOrdersReport,
   getReports,
+  resolveReport,
 };

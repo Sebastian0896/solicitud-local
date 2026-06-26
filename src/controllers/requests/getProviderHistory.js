@@ -17,7 +17,12 @@ const getProviderHistory = async (req, res) => {
          r.image_url,
          c.name AS category_name,
          c.icon AS category_icon,
-         u.name AS customer_name
+         u.name AS customer_name,
+         u.id AS customer_id,
+         EXISTS(
+           SELECT 1 FROM ratings rt
+           WHERE rt.request_id = r.id AND rt.rated_by = 'provider'
+         ) AS rated_by_provider
        FROM requests r
        LEFT JOIN categories c ON r.category_id = c.id
        LEFT JOIN users u ON r.customer_id = u.id
