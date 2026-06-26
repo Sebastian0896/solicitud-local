@@ -61,4 +61,17 @@ const deleteNotification = async (req, res) => {
   }
 };
 
-module.exports = { getNotifications, markAsRead, markAllAsRead, deleteNotification };
+const clearAllNotifications = async (req, res) => {
+  const userId = req.user.id;
+  try {
+    await db.query(
+      `UPDATE notifications SET deleted_at = NOW() WHERE user_id = $1 AND deleted_at IS NULL`,
+      [userId]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+module.exports = { getNotifications, markAsRead, markAllAsRead, deleteNotification, clearAllNotifications };
